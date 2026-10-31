@@ -3,4 +3,5 @@
 dist
 mcp-matrix-ro
 *.md
+!LICENSE
 !README.md

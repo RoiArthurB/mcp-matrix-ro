@@ -16,7 +16,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 LABEL org.opencontainers.image.title="mcp-matrix-ro" \
       org.opencontainers.image.description="Read-only Matrix MCP server and digest CLI" \
       org.opencontainers.image.source="https://github.com/RoiArthurB/mcp-matrix-ro" \
-      org.opencontainers.image.licenses="NOASSERTION"
+      org.opencontainers.image.licenses="Apache-2.0"
 COPY --from=build /out/mcp-matrix-ro /usr/local/bin/mcp-matrix-ro
 # Cache dir owned by the distroless nonroot user (65532).
 COPY --from=build --chown=65532:65532 /out/state /state

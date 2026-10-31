@@ -199,3 +199,9 @@ testdata/golden/       expected text output (refresh: go test ./internal/app -up
 ```
 
 Never add an endpoint to the allowlist without a review: it is the security boundary of this project.
+
+## License
+
+Copyright 2026 Arthur Brugière.
+
+Licensed under the [Apache License, Version 2.0](LICENSE).
