@@ -20,7 +20,7 @@ LABEL org.opencontainers.image.title="mcp-matrix-ro" \
 COPY --from=build /out/mcp-matrix-ro /usr/local/bin/mcp-matrix-ro
 # Cache dir owned by the distroless nonroot user (65532).
 COPY --from=build --chown=65532:65532 /out/state /state
-ENV MXREAD_STATE_DIR=/state
+ENV MCP_MATRIX_RO_STATE_DIR=/state
 VOLUME ["/state"]
 ENTRYPOINT ["/usr/local/bin/mcp-matrix-ro"]
 CMD ["serve"]

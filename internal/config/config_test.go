@@ -31,8 +31,8 @@ func TestTokenFileAndExclude(t *testing.T) {
 	_ = os.WriteFile(f, []byte("  filetok\n"), 0o600)
 	r := FromEnv(env(map[string]string{
 		"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "envtok",
-		"MATRIX_ACCESS_TOKEN_FILE": f, "MXREAD_EXCLUDE": "!abc:m, server notices ,^WhatsApp bridge",
-		"MXREAD_ME": "@archive:m,@whatsapp_84:m",
+		"MATRIX_ACCESS_TOKEN_FILE": f, "MCP_MATRIX_RO_EXCLUDE": "!abc:m, server notices ,^WhatsApp bridge",
+		"MCP_MATRIX_RO_ME": "@archive:m,@whatsapp_84:m",
 	}))
 	c, err := r.Resolve()
 	if err != nil {
@@ -50,10 +50,10 @@ func TestErrors(t *testing.T) {
 	for _, m := range []map[string]string{
 		{},
 		{"MATRIX_HOMESERVER": "https://m"},
-		{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "t", "MXREAD_TZ": "Mars/Base"},
-		{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "t", "MXREAD_NETWORKS": "bad"},
-		{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "t", "MXREAD_MAX_BODY": "x"},
-		{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "t", "MXREAD_HTTP_TIMEOUT": "soon"},
+		{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "t", "MCP_MATRIX_RO_TZ": "Mars/Base"},
+		{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "t", "MCP_MATRIX_RO_NETWORKS": "bad"},
+		{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "t", "MCP_MATRIX_RO_MAX_BODY": "x"},
+		{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "t", "MCP_MATRIX_RO_HTTP_TIMEOUT": "soon"},
 	} {
 		if _, err := FromEnv(env(m)).Resolve(); err == nil {
 			t.Errorf("want error for %v", m)

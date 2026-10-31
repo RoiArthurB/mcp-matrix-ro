@@ -23,7 +23,7 @@ func TestFold(t *testing.T) {
 }
 
 func newRes(t *testing.T, me string) *Resolver {
-	env := map[string]string{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "t", "MXREAD_ME": me}
+	env := map[string]string{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "t", "MCP_MATRIX_RO_ME": me}
 	cfg, err := config.FromEnv(func(k string) string { return env[k] }).Resolve()
 	if err != nil {
 		t.Fatal(err)

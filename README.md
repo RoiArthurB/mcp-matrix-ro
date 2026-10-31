@@ -5,7 +5,7 @@ Read-only access to one Matrix account for AI agents. It is a single static Go b
 - `mcp-matrix-ro serve`: an MCP server over stdio with 5 small tools (`recent`, `chats`, `read`, `search`, `chat_info`).
 - `mcp-matrix-ro digest`: prints the same "recent messages" view as Markdown or JSON, for cron jobs such as a nightly brief.
 
-It is built for a dedicated archive account (`@archive:<domain>`) that is logged into mautrix bridges, running on a Raspberry Pi next to a small local model. Every bridged chat is a Matrix room. See [SPEC.md](SPEC.md) for the full design.
+It is built for a dedicated archive account (`@archive:<domain>`) that is logged into mautrix bridges, running on a Raspberry Pi next to a small local model. Every bridged chat is a Matrix room. See [SPEC.md](SPEC.md) for the original design (written when the project was called mxread: its `MXREAD_*` variables are now `MCP_MATRIX_RO_*`).
 
 ## Read-only by construction
 
@@ -15,7 +15,7 @@ The access token could send WhatsApp messages as you through the bridge, so read
 - `/sync` is only allowed with `set_presence=offline`, and filters are sent inline, so no filter is stored server-side. mcp-matrix-ro never sends receipts, read markers, typing notifications, or presence.
 - Tests send every forbidden method and path through the client and assert it is refused without touching the network. The fake homeserver used by every other test re-checks each request it receives against the allowlist. CI fails on any violation.
 - Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`.
-- Run with `MXREAD_LOG=debug` to see every request line on stderr. The token and message bodies are never logged.
+- Run with `MCP_MATRIX_RO_LOG=debug` to see every request line on stderr. The token and message bodies are never logged.
 
 ## Install
 
@@ -37,7 +37,7 @@ The binaries are about 7 to 8 MB (`CGO_ENABLED=0`, `-trimpath`, `-s -w`).
 
 Configuration comes from environment variables. Flags with the same name override them (run `mcp-matrix-ro <cmd> -h`). The token and password are never flags, so they can't leak via `ps`.
 
-**Login:** use either an access token or a username and password. If both are set, the token wins. With a password, the first start logs in once and caches the token and device in `$MXREAD_STATE_DIR/session.json` (mode 0600). Later starts reuse it, so ZeroClaw restarts don't create a new device each time. If the server rejects the cached token, it logs in again once on the same device.
+**Login:** use either an access token or a username and password. If both are set, the token wins. With a password, the first start logs in once and caches the token and device in `$MCP_MATRIX_RO_STATE_DIR/session.json` (mode 0600). Later starts reuse it, so ZeroClaw restarts don't create a new device each time. If the server rejects the cached token, it logs in again once on the same device.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -45,15 +45,15 @@ Configuration comes from environment variables. Flags with the same name overrid
 | `MATRIX_ACCESS_TOKEN` / `MATRIX_ACCESS_TOKEN_FILE` | token or password | Token, or a file containing it (the file wins) |
 | `MATRIX_USER` | | User ID or localpart for password login (`archive` or `@archive:example.org`) |
 | `MATRIX_PASSWORD` / `MATRIX_PASSWORD_FILE` | | Password, or a file containing it (the file wins) |
-| `MXREAD_TZ` | `Asia/Ho_Chi_Minh` | Display timezone |
-| `MXREAD_ME` | whoami user | Comma list of IDs shown as `me`. **Include your own WhatsApp puppet** (e.g. `@whatsapp_84xxxxxxxxx:dom`), otherwise your bridged DMs look like 3-person groups. |
-| `MXREAD_NETWORKS` | `whatsapp=^@whatsapp_,telegram=^@telegram_,signal=^@signal_` | `name=regex` pairs on member IDs; untagged rooms are `matrix` |
-| `MXREAD_EXCLUDE` | empty | Comma list of room IDs (`!…`) or case-insensitive regexes on room names to hide |
-| `MXREAD_EXCLUDE_BOTS` | `^@(whatsapp\|telegram\|signal)bot:` | Bridge bots: rooms whose only other members match are hidden, and bots don't count as DM partners |
-| `MXREAD_MAX_BODY` | `500` | Truncate message bodies to N characters (`…[+N chars]`) |
-| `MXREAD_STATE_DIR` | `$XDG_STATE_HOME/mcp-matrix-ro` | Local cache (room names, member names, whoami) and, with password login, the session. It never stores message bodies. |
-| `MXREAD_HTTP_TIMEOUT` | `20s` | Per request |
-| `MXREAD_LOG` | `warn` | `debug`, `info`, `warn`, or `error`, to stderr only |
+| `MCP_MATRIX_RO_TZ` | `Asia/Ho_Chi_Minh` | Display timezone |
+| `MCP_MATRIX_RO_ME` | whoami user | Comma list of IDs shown as `me`. **Include your own WhatsApp puppet** (e.g. `@whatsapp_84xxxxxxxxx:dom`), otherwise your bridged DMs look like 3-person groups. |
+| `MCP_MATRIX_RO_NETWORKS` | `whatsapp=^@whatsapp_,telegram=^@telegram_,signal=^@signal_` | `name=regex` pairs on member IDs; untagged rooms are `matrix` |
+| `MCP_MATRIX_RO_EXCLUDE` | empty | Comma list of room IDs (`!…`) or case-insensitive regexes on room names to hide |
+| `MCP_MATRIX_RO_EXCLUDE_BOTS` | `^@(whatsapp\|telegram\|signal)bot:` | Bridge bots: rooms whose only other members match are hidden, and bots don't count as DM partners |
+| `MCP_MATRIX_RO_MAX_BODY` | `500` | Truncate message bodies to N characters (`…[+N chars]`) |
+| `MCP_MATRIX_RO_STATE_DIR` | `$XDG_STATE_HOME/mcp-matrix-ro` | Local cache (room names, member names, whoami) and, with password login, the session. It never stores message bodies. |
+| `MCP_MATRIX_RO_HTTP_TIMEOUT` | `20s` | Per request |
+| `MCP_MATRIX_RO_LOG` | `warn` | `debug`, `info`, `warn`, or `error`, to stderr only |
 
 Check your setup first:
 
@@ -85,7 +85,7 @@ servers = ["vault", "mail", "chat"]
 ```sh
 zeroclaw config set mcp.servers.chat.env.MATRIX_HOMESERVER
 zeroclaw config set mcp.servers.chat.env.MATRIX_ACCESS_TOKEN   # or MATRIX_USER + MATRIX_PASSWORD
-zeroclaw config set mcp.servers.chat.env.MXREAD_ME          # e.g. @archive:dom,@whatsapp_84xxxxxxxxx:dom
+zeroclaw config set mcp.servers.chat.env.MCP_MATRIX_RO_ME          # e.g. @archive:dom,@whatsapp_84xxxxxxxxx:dom
 zeroclaw service restart   # MCP processes only pick up new env on restart
 ```
 
@@ -99,7 +99,7 @@ The image is distroless, runs as non-root, and keeps its cache in the `/state` v
 
 ```sh
 cp docker-compose.example.yml docker-compose.yml
-cp .env.example .env                       # set MATRIX_HOMESERVER and MXREAD_ME
+cp .env.example .env                       # set MATRIX_HOMESERVER and MCP_MATRIX_RO_ME
 printf '%s' 'syt_…' > matrix_token.txt && chmod 600 matrix_token.txt
 docker compose run --rm mcp-matrix-ro check
 ```

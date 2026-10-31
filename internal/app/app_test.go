@@ -38,11 +38,11 @@ func setup(t *testing.T, opts ...func(*fakehs.Server)) (*app.App, *fakehs.Server
 		}
 	})
 	env := map[string]string{
-		"MATRIX_HOMESERVER":   hs.URL,
-		"MATRIX_ACCESS_TOKEN": fakehs.Token,
-		"MXREAD_ME":           "@whatsapp_84900000001:dom",
-		"MXREAD_EXCLUDE":      "^server notices$",
-		"MXREAD_STATE_DIR":    t.TempDir(),
+		"MATRIX_HOMESERVER":       hs.URL,
+		"MATRIX_ACCESS_TOKEN":     fakehs.Token,
+		"MCP_MATRIX_RO_ME":        "@whatsapp_84900000001:dom",
+		"MCP_MATRIX_RO_EXCLUDE":   "^server notices$",
+		"MCP_MATRIX_RO_STATE_DIR": t.TempDir(),
 	}
 	cfg, err := config.FromEnv(func(k string) string { return env[k] }).Resolve()
 	if err != nil {

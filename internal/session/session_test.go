@@ -16,7 +16,7 @@ import (
 )
 
 func cfg(t *testing.T, hs *fakehs.Server, dir, password string) *config.Config {
-	env := map[string]string{"MATRIX_HOMESERVER": hs.URL, "MATRIX_USER": "archive", "MATRIX_PASSWORD": password, "MXREAD_STATE_DIR": dir}
+	env := map[string]string{"MATRIX_HOMESERVER": hs.URL, "MATRIX_USER": "archive", "MATRIX_PASSWORD": password, "MCP_MATRIX_RO_STATE_DIR": dir}
 	c, err := config.FromEnv(func(k string) string { return env[k] }).Resolve()
 	if err != nil {
 		t.Fatal(err)

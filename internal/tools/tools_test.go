@@ -25,8 +25,8 @@ func connect(t *testing.T) (*mcp.ClientSession, *fakehs.Server) {
 	t.Helper()
 	hs := fakehs.New()
 	t.Cleanup(hs.Close)
-	env := map[string]string{"MATRIX_HOMESERVER": hs.URL, "MATRIX_ACCESS_TOKEN": fakehs.Token, "MXREAD_STATE_DIR": t.TempDir(),
-		"MXREAD_ME": "@whatsapp_84900000001:dom", "MXREAD_EXCLUDE": "^server notices$"}
+	env := map[string]string{"MATRIX_HOMESERVER": hs.URL, "MATRIX_ACCESS_TOKEN": fakehs.Token, "MCP_MATRIX_RO_STATE_DIR": t.TempDir(),
+		"MCP_MATRIX_RO_ME": "@whatsapp_84900000001:dom", "MCP_MATRIX_RO_EXCLUDE": "^server notices$"}
 	cfg, err := config.FromEnv(func(k string) string { return env[k] }).Resolve()
 	if err != nil {
 		t.Fatal(err)

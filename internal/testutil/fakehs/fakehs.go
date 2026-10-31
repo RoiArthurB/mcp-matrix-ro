@@ -128,7 +128,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case p == "/_matrix/client/versions":
 		write([]byte(`{"versions":["v1.9","v1.10","v1.11"]}`))
 	case p == "/_matrix/client/v3/account/whoami":
-		write([]byte(`{"user_id":"@archive:dom","device_id":"MXREAD"}`))
+		write([]byte(`{"user_id":"@archive:dom","device_id":"DEVICE1"}`))
 	case p == "/_matrix/client/v3/joined_rooms":
 		var sr matrix.SyncResponse
 		_ = json.Unmarshal(s.sync, &sr)

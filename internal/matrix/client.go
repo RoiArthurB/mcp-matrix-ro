@@ -389,7 +389,7 @@ type LoginRequest struct {
 	DeviceName string
 }
 
-// LoginResponse is the subset of the /login response mxread keeps.
+// LoginResponse is the subset of the /login response the client keeps.
 type LoginResponse struct {
 	AccessToken string `json:"access_token"`
 	DeviceID    string `json:"device_id"`

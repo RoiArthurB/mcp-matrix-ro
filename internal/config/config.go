@@ -66,15 +66,15 @@ func FromEnv(getenv func(string) string) Raw {
 		User:         getenv("MATRIX_USER"),
 		Password:     getenv("MATRIX_PASSWORD"),
 		PasswordFile: getenv("MATRIX_PASSWORD_FILE"),
-		TZ:           def("MXREAD_TZ", DefaultTZ),
-		Me:           getenv("MXREAD_ME"),
-		Networks:     def("MXREAD_NETWORKS", DefaultNetworks),
-		Exclude:      getenv("MXREAD_EXCLUDE"),
-		ExcludeBots:  def("MXREAD_EXCLUDE_BOTS", DefaultExcludeBots),
-		MaxBody:      def("MXREAD_MAX_BODY", "500"),
-		StateDir:     getenv("MXREAD_STATE_DIR"),
-		HTTPTimeout:  def("MXREAD_HTTP_TIMEOUT", "20s"),
-		Log:          def("MXREAD_LOG", "warn"),
+		TZ:           def("MCP_MATRIX_RO_TZ", DefaultTZ),
+		Me:           getenv("MCP_MATRIX_RO_ME"),
+		Networks:     def("MCP_MATRIX_RO_NETWORKS", DefaultNetworks),
+		Exclude:      getenv("MCP_MATRIX_RO_EXCLUDE"),
+		ExcludeBots:  def("MCP_MATRIX_RO_EXCLUDE_BOTS", DefaultExcludeBots),
+		MaxBody:      def("MCP_MATRIX_RO_MAX_BODY", "500"),
+		StateDir:     getenv("MCP_MATRIX_RO_STATE_DIR"),
+		HTTPTimeout:  def("MCP_MATRIX_RO_HTTP_TIMEOUT", "20s"),
+		Log:          def("MCP_MATRIX_RO_LOG", "warn"),
 	}
 }
 
@@ -91,15 +91,15 @@ func (r *Raw) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&r.TokenFile, "token-file", r.TokenFile, "file containing the access token (MATRIX_ACCESS_TOKEN_FILE)")
 	fs.StringVar(&r.User, "user", r.User, "Matrix user ID or localpart for password login (MATRIX_USER)")
 	fs.StringVar(&r.PasswordFile, "password-file", r.PasswordFile, "file containing the password (MATRIX_PASSWORD_FILE)")
-	fs.StringVar(&r.TZ, "tz", r.TZ, "display timezone (MXREAD_TZ)")
-	fs.StringVar(&r.Me, "me", r.Me, "comma list of user IDs rendered as 'me' (MXREAD_ME)")
-	fs.StringVar(&r.Networks, "networks", r.Networks, "name=regex pairs for network tagging (MXREAD_NETWORKS)")
-	fs.StringVar(&r.Exclude, "exclude", r.Exclude, "room IDs or name regexes to hide (MXREAD_EXCLUDE)")
-	fs.StringVar(&r.ExcludeBots, "exclude-bots", r.ExcludeBots, "hide rooms whose only other member matches (MXREAD_EXCLUDE_BOTS)")
-	fs.StringVar(&r.MaxBody, "max-body", r.MaxBody, "truncate bodies to N chars (MXREAD_MAX_BODY)")
-	fs.StringVar(&r.StateDir, "state-dir", r.StateDir, "local cache dir (MXREAD_STATE_DIR)")
-	fs.StringVar(&r.HTTPTimeout, "http-timeout", r.HTTPTimeout, "per-request timeout (MXREAD_HTTP_TIMEOUT)")
-	fs.StringVar(&r.Log, "log", r.Log, "log level: debug|info|warn|error (MXREAD_LOG)")
+	fs.StringVar(&r.TZ, "tz", r.TZ, "display timezone (MCP_MATRIX_RO_TZ)")
+	fs.StringVar(&r.Me, "me", r.Me, "comma list of user IDs rendered as 'me' (MCP_MATRIX_RO_ME)")
+	fs.StringVar(&r.Networks, "networks", r.Networks, "name=regex pairs for network tagging (MCP_MATRIX_RO_NETWORKS)")
+	fs.StringVar(&r.Exclude, "exclude", r.Exclude, "room IDs or name regexes to hide (MCP_MATRIX_RO_EXCLUDE)")
+	fs.StringVar(&r.ExcludeBots, "exclude-bots", r.ExcludeBots, "hide rooms whose only other member matches (MCP_MATRIX_RO_EXCLUDE_BOTS)")
+	fs.StringVar(&r.MaxBody, "max-body", r.MaxBody, "truncate bodies to N chars (MCP_MATRIX_RO_MAX_BODY)")
+	fs.StringVar(&r.StateDir, "state-dir", r.StateDir, "local cache dir (MCP_MATRIX_RO_STATE_DIR)")
+	fs.StringVar(&r.HTTPTimeout, "http-timeout", r.HTTPTimeout, "per-request timeout (MCP_MATRIX_RO_HTTP_TIMEOUT)")
+	fs.StringVar(&r.Log, "log", r.Log, "log level: debug|info|warn|error (MCP_MATRIX_RO_LOG)")
 }
 
 // Resolve validates and converts Raw into Config.
@@ -136,17 +136,17 @@ func (r Raw) Resolve() (*Config, error) {
 	}
 	var err error
 	if c.TZ, err = time.LoadLocation(r.TZ); err != nil {
-		return nil, fmt.Errorf("MXREAD_TZ: %w", err)
+		return nil, fmt.Errorf("MCP_MATRIX_RO_TZ: %w", err)
 	}
 	c.Me = splitList(r.Me)
 	for _, pair := range splitList(r.Networks) {
 		name, re, ok := strings.Cut(pair, "=")
 		if !ok || name == "" {
-			return nil, fmt.Errorf("MXREAD_NETWORKS: bad entry %q (want name=regex)", pair)
+			return nil, fmt.Errorf("MCP_MATRIX_RO_NETWORKS: bad entry %q (want name=regex)", pair)
 		}
 		rx, err := regexp.Compile(re)
 		if err != nil {
-			return nil, fmt.Errorf("MXREAD_NETWORKS %s: %w", name, err)
+			return nil, fmt.Errorf("MCP_MATRIX_RO_NETWORKS %s: %w", name, err)
 		}
 		c.Networks = append(c.Networks, Network{Name: strings.ToLower(name), Re: rx})
 	}
@@ -158,23 +158,23 @@ func (r Raw) Resolve() (*Config, error) {
 		}
 		rx, err := regexp.Compile("(?i)" + e)
 		if err != nil {
-			return nil, fmt.Errorf("MXREAD_EXCLUDE %q: %w", e, err)
+			return nil, fmt.Errorf("MCP_MATRIX_RO_EXCLUDE %q: %w", e, err)
 		}
 		c.ExcludeRe = append(c.ExcludeRe, rx)
 	}
 	if r.ExcludeBots != "" {
 		if c.ExcludeBots, err = regexp.Compile(r.ExcludeBots); err != nil {
-			return nil, fmt.Errorf("MXREAD_EXCLUDE_BOTS: %w", err)
+			return nil, fmt.Errorf("MCP_MATRIX_RO_EXCLUDE_BOTS: %w", err)
 		}
 	}
 	if c.MaxBody, err = strconv.Atoi(r.MaxBody); err != nil || c.MaxBody < 0 {
-		return nil, fmt.Errorf("MXREAD_MAX_BODY: want a non-negative integer, got %q", r.MaxBody)
+		return nil, fmt.Errorf("MCP_MATRIX_RO_MAX_BODY: want a non-negative integer, got %q", r.MaxBody)
 	}
 	if c.HTTPTimeout, err = time.ParseDuration(r.HTTPTimeout); err != nil || c.HTTPTimeout <= 0 {
-		return nil, fmt.Errorf("MXREAD_HTTP_TIMEOUT: want a duration like 20s, got %q", r.HTTPTimeout)
+		return nil, fmt.Errorf("MCP_MATRIX_RO_HTTP_TIMEOUT: want a duration like 20s, got %q", r.HTTPTimeout)
 	}
 	if err := c.LogLevel.UnmarshalText([]byte(r.Log)); err != nil {
-		return nil, fmt.Errorf("MXREAD_LOG: %w", err)
+		return nil, fmt.Errorf("MCP_MATRIX_RO_LOG: %w", err)
 	}
 	c.StateDir = r.StateDir
 	if c.StateDir == "" {

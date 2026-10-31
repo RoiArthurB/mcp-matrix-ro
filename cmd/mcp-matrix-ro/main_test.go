@@ -38,9 +38,9 @@ func env(t *testing.T, hs *fakehs.Server, extra ...string) []string {
 		"PATH=" + os.Getenv("PATH"),
 		"MATRIX_HOMESERVER=" + hs.URL,
 		"MATRIX_ACCESS_TOKEN=" + fakehs.Token,
-		"MXREAD_ME=@whatsapp_84900000001:dom",
-		"MXREAD_EXCLUDE=^server notices$",
-		"MXREAD_STATE_DIR=" + t.TempDir(),
+		"MCP_MATRIX_RO_ME=@whatsapp_84900000001:dom",
+		"MCP_MATRIX_RO_EXCLUDE=^server notices$",
+		"MCP_MATRIX_RO_STATE_DIR=" + t.TempDir(),
 	}, extra...)
 }
 
@@ -72,7 +72,7 @@ func TestServeSmoke(t *testing.T) {
 	hs := fakehs.New()
 	defer hs.Close()
 	cmd := exec.Command(binary, "serve")
-	cmd.Env = env(t, hs, "MXREAD_LOG=debug")
+	cmd.Env = env(t, hs, "MCP_MATRIX_RO_LOG=debug")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -203,12 +203,12 @@ func TestExitCodes(t *testing.T) {
 func TestPasswordLoginCLI(t *testing.T) {
 	hs := fakehs.New()
 	defer hs.Close()
-	base := []string{"PATH=" + os.Getenv("PATH"), "MATRIX_HOMESERVER=" + hs.URL, "MATRIX_USER=archive", "MXREAD_STATE_DIR=" + t.TempDir()}
+	base := []string{"PATH=" + os.Getenv("PATH"), "MATRIX_HOMESERVER=" + hs.URL, "MATRIX_USER=archive", "MCP_MATRIX_RO_STATE_DIR=" + t.TempDir()}
 	out, errOut, code := runCmd(t, append(base, "MATRIX_PASSWORD="+fakehs.Password), "check")
 	if code != 0 || !strings.Contains(out, "Logged in as: @archive:dom") {
 		t.Fatalf("exit %d: %s %s", code, out, errOut)
 	}
-	_, errOut, code = runCmd(t, append(base[:3], "MXREAD_STATE_DIR="+t.TempDir(), "MATRIX_PASSWORD=nope"), "check")
+	_, errOut, code = runCmd(t, append(base[:3], "MCP_MATRIX_RO_STATE_DIR="+t.TempDir(), "MATRIX_PASSWORD=nope"), "check")
 	if code != exitAuth || strings.Contains(errOut, "nope") {
 		t.Fatalf("wrong password: exit %d, stderr %q", code, errOut)
 	}

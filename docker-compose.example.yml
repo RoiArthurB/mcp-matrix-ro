@@ -17,7 +17,7 @@ x-common: &common
   env_file: .env
   environment:
     MATRIX_ACCESS_TOKEN_FILE: /run/secrets/matrix_token
-    MXREAD_STATE_DIR: /state
+    MCP_MATRIX_RO_STATE_DIR: /state
   secrets:
     - matrix_token
   volumes:
