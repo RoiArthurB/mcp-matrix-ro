@@ -1,0 +1,6 @@
+.git
+.github
+dist
+mcp-matrix-ro
+*.md
+!README.md

@@ -1,4 +1,4 @@
-// Package tools exposes mxread operations as MCP tools. It is a thin adapter
+// Package tools exposes mcp-matrix-ro operations as MCP tools. It is a thin adapter
 // over internal/app so the MCP SDK can be swapped easily.
 package tools
 
@@ -10,10 +10,10 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/RoiArthurB/mxread/internal/app"
-	"github.com/RoiArthurB/mxread/internal/matrix"
-	"github.com/RoiArthurB/mxread/internal/render"
-	"github.com/RoiArthurB/mxread/internal/resolve"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/app"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/matrix"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/render"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/resolve"
 )
 
 // Inputs. Descriptions are one line each: every schema is sent with every
@@ -145,7 +145,7 @@ func errorText(err error) string {
 	case app.IsUserError(err):
 		return err.Error()
 	case matrix.IsAuth(err):
-		return "Matrix login failed (access token rejected). Tell the user to check MATRIX_ACCESS_TOKEN."
+		return "Matrix login failed (access token rejected). Tell the user to check MATRIX_ACCESS_TOKEN or MATRIX_USER/MATRIX_PASSWORD."
 	case errors.Is(err, context.DeadlineExceeded):
 		return "Matrix server timed out. Try again later or narrow the request."
 	default:

@@ -14,7 +14,7 @@ type Event struct {
 	Unsigned Unsigned        `json:"unsigned"`
 }
 
-// Unsigned holds the parts of unsigned data mxread uses.
+// Unsigned holds the parts of unsigned data mcp-matrix-ro uses.
 type Unsigned struct {
 	RedactedBecause json.RawMessage `json:"redacted_because,omitempty"`
 	Relations       struct {
@@ -39,7 +39,7 @@ type WhoAmI struct {
 	DeviceID string `json:"device_id"`
 }
 
-// SyncResponse is the subset of /sync used by mxread.
+// SyncResponse is the subset of /sync used by mcp-matrix-ro.
 type SyncResponse struct {
 	NextBatch string `json:"next_batch"`
 	Rooms     struct {
@@ -106,7 +106,7 @@ type Profile struct {
 	DisplayName string `json:"displayname"`
 }
 
-// SearchResponse is the subset of POST /search used by mxread.
+// SearchResponse is the subset of POST /search used by mcp-matrix-ro.
 type SearchResponse struct {
 	SearchCategories struct {
 		RoomEvents struct {

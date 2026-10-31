@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/RoiArthurB/mxread/internal/model"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/model"
 )
 
 // Disclaimer is included once in every output (SPEC §6).

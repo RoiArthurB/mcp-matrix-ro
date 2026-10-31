@@ -1,4 +1,4 @@
-// Command mxread gives an AI agent read-only access to one Matrix account:
+// Command mcp-matrix-ro gives an AI agent read-only access to one Matrix account:
 // an MCP server over stdio (serve), a digest CLI for cron (digest), and a
 // setup checker (check).
 package main
@@ -23,12 +23,13 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/RoiArthurB/mxread/internal/app"
-	"github.com/RoiArthurB/mxread/internal/config"
-	"github.com/RoiArthurB/mxread/internal/matrix"
-	"github.com/RoiArthurB/mxread/internal/model"
-	"github.com/RoiArthurB/mxread/internal/render"
-	"github.com/RoiArthurB/mxread/internal/tools"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/app"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/config"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/matrix"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/model"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/render"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/session"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/tools"
 )
 
 var version = "dev"
@@ -46,16 +47,16 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-const usage = `mxread — read-only Matrix access for AI agents
+const usage = `mcp-matrix-ro — read-only Matrix access for AI agents
 
 Usage:
-  mxread serve   [flags]   MCP server over stdio
-  mxread digest  [flags]   print recent messages (Markdown or JSON)
-  mxread check   [flags]   verify login, server features and chat counts
-  mxread version
+  mcp-matrix-ro serve   [flags]   MCP server over stdio
+  mcp-matrix-ro digest  [flags]   print recent messages (Markdown or JSON)
+  mcp-matrix-ro check   [flags]   verify login, server features and chat counts
+  mcp-matrix-ro version
 
 Configuration comes from environment variables (see README); flags override.
-Run "mxread <command> -h" for flags.
+Run "mcp-matrix-ro <command> -h" for flags.
 `
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -66,7 +67,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	cmd, rest := args[0], args[1:]
 	switch cmd {
 	case "version", "--version", "-v":
-		fmt.Fprintln(stdout, "mxread", version)
+		fmt.Fprintln(stdout, "mcp-matrix-ro", version)
 		return exitOK
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usage)
@@ -78,7 +79,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	raw := config.FromEnv(os.Getenv)
-	fs := flag.NewFlagSet("mxread "+cmd, flag.ContinueOnError)
+	fs := flag.NewFlagSet("mcp-matrix-ro "+cmd, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	raw.RegisterFlags(fs)
 	var d digestFlags
@@ -93,13 +94,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	cfg, err := raw.Resolve()
 	if err != nil {
-		fmt.Fprintln(stderr, "mxread: config:", err)
+		fmt.Fprintln(stderr, "mcp-matrix-ro: config:", err)
 		return exitUsage
 	}
 	log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
-	mc, err := matrix.New(matrix.Options{Homeserver: cfg.Homeserver, Token: cfg.Token, Timeout: cfg.HTTPTimeout, Logger: log})
+	mc, err := session.NewClient(cfg, log, nil)
 	if err != nil {
-		fmt.Fprintln(stderr, "mxread: config:", err)
+		fmt.Fprintln(stderr, "mcp-matrix-ro: config:", err)
 		return exitUsage
 	}
 	a := app.New(cfg, mc, log, nil)
@@ -119,11 +120,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func serve(ctx context.Context, a *app.App, log *slog.Logger, stderr io.Writer) int {
-	s := mcp.NewServer(&mcp.Implementation{Name: "mxread", Version: version}, nil)
+	s := mcp.NewServer(&mcp.Implementation{Name: "mcp-matrix-ro", Version: version}, nil)
 	tools.Register(s, a)
-	log.Info("mxread serving MCP on stdio")
+	log.Info("mcp-matrix-ro serving MCP on stdio")
 	if err := s.Run(ctx, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
-		fmt.Fprintln(stderr, "mxread: serve:", err)
+		fmt.Fprintln(stderr, "mcp-matrix-ro: serve:", err)
 		return exitFail
 	}
 	return exitOK
@@ -135,24 +136,24 @@ func failure(stderr io.Writer, what string, err error) int {
 	var uerr *app.UserError
 	switch {
 	case matrix.IsAuth(err):
-		fmt.Fprintf(stderr, "mxread: %s: authentication failed: the access token was rejected (%v)\n", what, err)
+		fmt.Fprintf(stderr, "mcp-matrix-ro: %s: authentication failed: the access token or password was rejected (%v)\n", what, err)
 		return exitAuth
 	case errors.As(err, &uerr):
-		fmt.Fprintf(stderr, "mxread: %s: %v\n", what, err)
+		fmt.Fprintf(stderr, "mcp-matrix-ro: %s: %v\n", what, err)
 		return exitUsage
 	case app.IsUserError(err):
-		fmt.Fprintf(stderr, "mxread: %s: %v\n", what, err)
+		fmt.Fprintf(stderr, "mcp-matrix-ro: %s: %v\n", what, err)
 		return exitUsage
 	case errors.As(err, &nerr), errors.Is(err, context.DeadlineExceeded):
-		fmt.Fprintf(stderr, "mxread: %s: cannot reach the homeserver: %v\n", what, err)
+		fmt.Fprintf(stderr, "mcp-matrix-ro: %s: cannot reach the homeserver: %v\n", what, err)
 		return exitNetwork
 	default:
 		var me *matrix.Error
 		if errors.As(err, &me) {
-			fmt.Fprintf(stderr, "mxread: %s: homeserver error: %v\n", what, err)
+			fmt.Fprintf(stderr, "mcp-matrix-ro: %s: homeserver error: %v\n", what, err)
 			return exitNetwork
 		}
-		fmt.Fprintf(stderr, "mxread: %s: %v\n", what, err)
+		fmt.Fprintf(stderr, "mcp-matrix-ro: %s: %v\n", what, err)
 		return exitFail
 	}
 }
@@ -175,7 +176,7 @@ func (d *digestFlags) register(fs *flag.FlagSet) {
 
 func digest(ctx context.Context, a *app.App, d digestFlags, stdout, stderr io.Writer) int {
 	if d.format != "md" && d.format != "json" {
-		fmt.Fprintln(stderr, "mxread: digest: --format must be md or json")
+		fmt.Fprintln(stderr, "mcp-matrix-ro: digest: --format must be md or json")
 		return exitUsage
 	}
 	start := a.Now()
@@ -183,7 +184,7 @@ func digest(ctx context.Context, a *app.App, d digestFlags, stdout, stderr io.Wr
 	if d.cursorFile != "" {
 		ts, err := readCursorFile(d.cursorFile)
 		if err != nil {
-			fmt.Fprintln(stderr, "mxread: digest:", err)
+			fmt.Fprintln(stderr, "mcp-matrix-ro: digest:", err)
 			return exitUsage
 		}
 		p.SinceMS = ts
@@ -197,7 +198,7 @@ func digest(ctx context.Context, a *app.App, d digestFlags, stdout, stderr io.Wr
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(r); err != nil {
-			fmt.Fprintln(stderr, "mxread: digest:", err)
+			fmt.Fprintln(stderr, "mcp-matrix-ro: digest:", err)
 			return exitFail
 		}
 	default:
@@ -205,7 +206,7 @@ func digest(ctx context.Context, a *app.App, d digestFlags, stdout, stderr io.Wr
 	}
 	if d.cursorFile != "" {
 		if err := writeCursorFile(d.cursorFile, start); err != nil {
-			fmt.Fprintln(stderr, "mxread: digest: updating cursor file:", err)
+			fmt.Fprintln(stderr, "mcp-matrix-ro: digest: updating cursor file:", err)
 			return exitFail
 		}
 	}

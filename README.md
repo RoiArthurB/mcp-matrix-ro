@@ -1,9 +1,9 @@
-# mxread
+# mcp-matrix-ro
 
 Read-only access to one Matrix account for AI agents. It is a single static Go binary with two faces:
 
-- `mxread serve`: an MCP server over stdio with 5 small tools (`recent`, `chats`, `read`, `search`, `chat_info`).
-- `mxread digest`: prints the same "recent messages" view as Markdown or JSON, for cron jobs such as a nightly brief.
+- `mcp-matrix-ro serve`: an MCP server over stdio with 5 small tools (`recent`, `chats`, `read`, `search`, `chat_info`).
+- `mcp-matrix-ro digest`: prints the same "recent messages" view as Markdown or JSON, for cron jobs such as a nightly brief.
 
 It is built for a dedicated archive account (`@archive:<domain>`) that is logged into mautrix bridges, running on a Raspberry Pi next to a small local model. Every bridged chat is a Matrix room. See [SPEC.md](SPEC.md) for the full design.
 
@@ -11,20 +11,23 @@ It is built for a dedicated archive account (`@archive:<domain>`) that is logged
 
 The access token could send WhatsApp messages as you through the bridge, so read-only is enforced in code:
 
-- All traffic goes through one HTTP client whose transport refuses anything not on a fixed allowlist of `GET` endpoints plus `POST /search`. The check runs **before** any network I/O, and the client also pins the homeserver host. See [`internal/matrix/allowlist.go`](internal/matrix/allowlist.go).
-- `/sync` is only allowed with `set_presence=offline`, and filters are sent inline, so no filter is stored server-side. mxread never sends receipts, read markers, typing notifications, or presence.
+- All traffic goes through one HTTP client whose transport refuses anything not on a fixed allowlist of `GET` endpoints plus `POST /search` and `POST /login` (the latter only for password login). The check runs **before** any network I/O, and the client also pins the homeserver host. See [`internal/matrix/allowlist.go`](internal/matrix/allowlist.go).
+- `/sync` is only allowed with `set_presence=offline`, and filters are sent inline, so no filter is stored server-side. mcp-matrix-ro never sends receipts, read markers, typing notifications, or presence.
 - Tests send every forbidden method and path through the client and assert it is refused without touching the network. The fake homeserver used by every other test re-checks each request it receives against the allowlist. CI fails on any violation.
 - Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`.
 - Run with `MXREAD_LOG=debug` to see every request line on stderr. The token and message bodies are never logged.
 
-## Build
+## Install
 
-You need Go 1.25 or later (the MCP Go SDK v1.7 requires it).
+- **Binaries:** each [GitHub release](https://github.com/RoiArthurB/mcp-matrix-ro/releases) has static binaries for Linux (amd64, arm64, armv7), macOS (amd64, arm64), Windows (amd64, arm64) and FreeBSD (amd64), plus `sha256sums.txt`.
+- **Docker:** `ghcr.io/roiarthurb/mcp-matrix-ro` (linux/amd64, arm64, arm/v7). See [Docker](#docker) below.
+- **From source:** you need Go 1.25 or later (the MCP Go SDK v1.7 requires it).
 
 ```sh
-make build          # ./mxread for this machine
-make build-arm64    # dist/mxread-linux-arm64 (Raspberry Pi 4)
-make release        # both arches + sha256sums, fails if a binary exceeds 15 MB
+make build          # ./mcp-matrix-ro for this machine
+make build-arm64    # dist/mcp-matrix-ro-linux-arm64 (Raspberry Pi 4)
+make dist           # every release platform into dist/
+make release        # dist + sha256sums, fails if a binary exceeds 15 MB
 make test lint
 ```
 
@@ -32,26 +35,30 @@ The binaries are about 7 to 8 MB (`CGO_ENABLED=0`, `-trimpath`, `-s -w`).
 
 ## Configuration
 
-Configuration comes from environment variables. Flags with the same name override them (run `mxread <cmd> -h`). The token is never a flag, so it can't leak via `ps`.
+Configuration comes from environment variables. Flags with the same name override them (run `mcp-matrix-ro <cmd> -h`). The token and password are never flags, so they can't leak via `ps`.
+
+**Login:** use either an access token or a username and password. If both are set, the token wins. With a password, the first start logs in once and caches the token and device in `$MXREAD_STATE_DIR/session.json` (mode 0600). Later starts reuse it, so ZeroClaw restarts don't create a new device each time. If the server rejects the cached token, it logs in again once on the same device.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `MATRIX_HOMESERVER` | required | Base URL, e.g. `https://matrix.example.org` |
-| `MATRIX_ACCESS_TOKEN` / `MATRIX_ACCESS_TOKEN_FILE` | required | Token, or a file containing it (the file wins) |
+| `MATRIX_ACCESS_TOKEN` / `MATRIX_ACCESS_TOKEN_FILE` | token or password | Token, or a file containing it (the file wins) |
+| `MATRIX_USER` | | User ID or localpart for password login (`archive` or `@archive:example.org`) |
+| `MATRIX_PASSWORD` / `MATRIX_PASSWORD_FILE` | | Password, or a file containing it (the file wins) |
 | `MXREAD_TZ` | `Asia/Ho_Chi_Minh` | Display timezone |
 | `MXREAD_ME` | whoami user | Comma list of IDs shown as `me`. **Include your own WhatsApp puppet** (e.g. `@whatsapp_84xxxxxxxxx:dom`), otherwise your bridged DMs look like 3-person groups. |
 | `MXREAD_NETWORKS` | `whatsapp=^@whatsapp_,telegram=^@telegram_,signal=^@signal_` | `name=regex` pairs on member IDs; untagged rooms are `matrix` |
 | `MXREAD_EXCLUDE` | empty | Comma list of room IDs (`!…`) or case-insensitive regexes on room names to hide |
 | `MXREAD_EXCLUDE_BOTS` | `^@(whatsapp\|telegram\|signal)bot:` | Bridge bots: rooms whose only other members match are hidden, and bots don't count as DM partners |
 | `MXREAD_MAX_BODY` | `500` | Truncate message bodies to N characters (`…[+N chars]`) |
-| `MXREAD_STATE_DIR` | `$XDG_STATE_HOME/mxread` | Local cache: room names, member names, whoami. It never stores message bodies. |
+| `MXREAD_STATE_DIR` | `$XDG_STATE_HOME/mcp-matrix-ro` | Local cache (room names, member names, whoami) and, with password login, the session. It never stores message bodies. |
 | `MXREAD_HTTP_TIMEOUT` | `20s` | Per request |
 | `MXREAD_LOG` | `warn` | `debug`, `info`, `warn`, or `error`, to stderr only |
 
 Check your setup first:
 
 ```sh
-$ mxread check
+$ mcp-matrix-ro check
 Homeserver:   https://matrix.example.org
 Logged in as: @archive:example.org (device ABCDEF)
 Shown as me:  @archive:example.org, @whatsapp_84xxxxxxxxx:example.org
@@ -68,7 +75,7 @@ Joined rooms: 312 (287 visible chats: 241 DMs, 46 groups; 25 hidden)
 ```toml
 [[mcp.servers]]
 name = "chat"
-command = "/usr/local/bin/mxread"
+command = "/usr/local/bin/mcp-matrix-ro"
 args = ["serve"]
 
 [mcp_bundles.assistant]
@@ -77,12 +84,36 @@ servers = ["vault", "mail", "chat"]
 
 ```sh
 zeroclaw config set mcp.servers.chat.env.MATRIX_HOMESERVER
-zeroclaw config set mcp.servers.chat.env.MATRIX_ACCESS_TOKEN
+zeroclaw config set mcp.servers.chat.env.MATRIX_ACCESS_TOKEN   # or MATRIX_USER + MATRIX_PASSWORD
 zeroclaw config set mcp.servers.chat.env.MXREAD_ME          # e.g. @archive:dom,@whatsapp_84xxxxxxxxx:dom
 zeroclaw service restart   # MCP processes only pick up new env on restart
 ```
 
 `auto_approve`: `chat__recent`, `chat__chats`, `chat__read`, `chat__search`, `chat__chat_info`.
+
+## Docker
+
+The image is distroless, runs as non-root, and keeps its cache in the `/state` volume. Because MCP runs over stdio, the MCP client starts the container itself. Nothing listens on a port.
+
+[`docker-compose.example.yml`](docker-compose.example.yml) is a ready-to-use setup. It passes the token as a Docker secret, uses a read-only root filesystem, drops all capabilities, and includes a `digest` service for cron.
+
+```sh
+cp docker-compose.example.yml docker-compose.yml
+cp .env.example .env                       # set MATRIX_HOMESERVER and MXREAD_ME
+printf '%s' 'syt_…' > matrix_token.txt && chmod 600 matrix_token.txt
+docker compose run --rm mcp-matrix-ro check
+```
+
+To use a password instead, remove the secret and set `MATRIX_USER` and `MATRIX_PASSWORD_FILE` (or `MATRIX_PASSWORD`) in `.env`.
+
+ZeroClaw with Docker:
+
+```toml
+[[mcp.servers]]
+name = "chat"
+command = "docker"
+args = ["compose", "-f", "/opt/mcp-matrix-ro/docker-compose.yml", "run", "--rm", "-T", "mcp-matrix-ro", "serve"]
+```
 
 ## Tools
 
@@ -126,7 +157,7 @@ How it works:
 ## Digest (nightly brief)
 
 ```sh
-mxread digest --since 24h [--network whatsapp] [--chat NAME] [--format md|json] [--per-chat 20] [--cursor-file PATH]
+mcp-matrix-ro digest --since 24h [--network whatsapp] [--chat NAME] [--format md|json] [--per-chat 20] [--cursor-file PATH]
 ```
 
 - The output is the same view as `recent`, with no total limit.
@@ -136,7 +167,7 @@ mxread digest --since 24h [--network whatsapp] [--chat NAME] [--format md|json] 
 Example cron entry:
 
 ```cron
-30 6 * * * . /etc/mxread.env && /usr/local/bin/mxread digest --cursor-file /var/lib/mxread/digest.cursor >> /var/lib/brief/chat.md
+30 6 * * * . /etc/mcp-matrix-ro.env && /usr/local/bin/mcp-matrix-ro digest --cursor-file /var/lib/mcp-matrix-ro/digest.cursor >> /var/lib/brief/chat.md
 ```
 
 ## Rendering rules
@@ -147,11 +178,17 @@ Example cron entry:
 - **Replies:** the fallback quote is stripped and the reply is rendered `[↩ sender: first 60 chars]`. The parent comes from the batch, the fallback, or a single cached `/event` fetch.
 - **Media, deletions, encryption:** media renders as `[image: name]`, `[voice message 0:42]`, `[file: x.pdf]`, `[location: geo:…]`, or `[sticker]`, and media is never downloaded. Deleted messages show as `[deleted]` and encrypted ones as `[encrypted message]`. Joins, renames, and reactions are hidden.
 
+## Releases and CI
+
+- `.github/workflows/test.yml` runs on every push to `main` and every pull request. It runs gofmt, go vet, staticcheck, the tests with `-race` (including the read-only guarantee tests), a cross-build of every platform with the 15 MB size check, and a Docker build.
+- `.github/workflows/release.yml` runs when you push a `v*` tag (`git tag v0.1.0 && git push origin v0.1.0`). It re-runs the tests, publishes a GitHub release with every binary and `sha256sums.txt`, and pushes a multi-arch image to `ghcr.io/roiarthurb/mcp-matrix-ro` tagged `0.1.0`, `0.1` and `latest`. It can also be re-run by hand for an existing tag.
+
 ## Development
 
 ```
-cmd/mxread/            subcommands: serve, digest, check, version (+ stdio smoke test)
+cmd/mcp-matrix-ro/     subcommands: serve, digest, check, version (+ stdio smoke test)
 internal/matrix/       allowlisted client, endpoints, types, read-only tests
+internal/session/      token or password login, cached session
 internal/resolve/      room index, names, network tagging, DM detection, chat lookup, cache
 internal/render/       event -> message conversion, text rendering
 internal/app/          operations shared by MCP tools and the CLI

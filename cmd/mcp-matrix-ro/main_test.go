@@ -13,17 +13,17 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/RoiArthurB/mxread/internal/testutil/fakehs"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/testutil/fakehs"
 )
 
 var binary string
 
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "mxread-test")
+	dir, err := os.MkdirTemp("", "mcp-matrix-ro-test")
 	if err != nil {
 		panic(err)
 	}
-	binary = filepath.Join(dir, "mxread")
+	binary = filepath.Join(dir, "mcp-matrix-ro")
 	out, err := exec.Command("go", "build", "-o", binary, ".").CombinedOutput()
 	if err != nil {
 		panic(string(out))
@@ -195,7 +195,22 @@ func TestExitCodes(t *testing.T) {
 		t.Errorf("missing config: exit %d", code)
 	}
 	out, _, code := runCmd(t, nil, "version")
-	if code != 0 || !strings.HasPrefix(out, "mxread ") {
+	if code != 0 || !strings.HasPrefix(out, "mcp-matrix-ro ") {
 		t.Errorf("version: %d %q", code, out)
 	}
+}
+
+func TestPasswordLoginCLI(t *testing.T) {
+	hs := fakehs.New()
+	defer hs.Close()
+	base := []string{"PATH=" + os.Getenv("PATH"), "MATRIX_HOMESERVER=" + hs.URL, "MATRIX_USER=archive", "MXREAD_STATE_DIR=" + t.TempDir()}
+	out, errOut, code := runCmd(t, append(base, "MATRIX_PASSWORD="+fakehs.Password), "check")
+	if code != 0 || !strings.Contains(out, "Logged in as: @archive:dom") {
+		t.Fatalf("exit %d: %s %s", code, out, errOut)
+	}
+	_, errOut, code = runCmd(t, append(base[:3], "MXREAD_STATE_DIR="+t.TempDir(), "MATRIX_PASSWORD=nope"), "check")
+	if code != exitAuth || strings.Contains(errOut, "nope") {
+		t.Fatalf("wrong password: exit %d, stderr %q", code, errOut)
+	}
+	noViolations(t, hs)
 }

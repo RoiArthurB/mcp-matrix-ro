@@ -12,12 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RoiArthurB/mxread/internal/config"
-	"github.com/RoiArthurB/mxread/internal/matrix"
-	"github.com/RoiArthurB/mxread/internal/model"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/config"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/matrix"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/model"
 )
 
-// MessageTypes are the timeline event types mxread reads.
+// MessageTypes are the timeline event types mcp-matrix-ro reads.
 var MessageTypes = []string{"m.room.message", "m.room.encrypted", "m.sticker"}
 
 // maxProfileFetches bounds global profile lookups per operation.

@@ -60,3 +60,23 @@ func TestErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestPasswordLogin(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "pw")
+	_ = os.WriteFile(f, []byte(" p@ss word \n"), 0o600)
+	c, err := FromEnv(env(map[string]string{"MATRIX_HOMESERVER": "https://m", "MATRIX_USER": "archive", "MATRIX_PASSWORD_FILE": f})).Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.User != "archive" || c.Password != " p@ss word " || c.Token != "" {
+		t.Fatalf("got %+v", c)
+	}
+	// A token wins over credentials.
+	c, _ = FromEnv(env(map[string]string{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "t", "MATRIX_USER": "a", "MATRIX_PASSWORD": "p"})).Resolve()
+	if c.Token != "t" || c.Password != "" {
+		t.Fatalf("token should win: %+v", c)
+	}
+	if _, err := FromEnv(env(map[string]string{"MATRIX_HOMESERVER": "https://m", "MATRIX_USER": "a"})).Resolve(); err == nil {
+		t.Fatal("want error for user without password")
+	}
+}

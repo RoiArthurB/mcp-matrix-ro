@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/RoiArthurB/mxread/internal/matrix"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/matrix"
 )
 
 func ev(id, sender string, ts int64, content string) matrix.Event {

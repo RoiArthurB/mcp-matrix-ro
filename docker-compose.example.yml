@@ -1,0 +1,47 @@
+# Example Docker Compose setup for mcp-matrix-ro.
+#
+# 1. cp docker-compose.example.yml docker-compose.yml
+#    cp .env.example .env            # then edit it
+#    printf '%s' 'syt_your_token' > matrix_token.txt && chmod 600 matrix_token.txt
+# 2. docker compose run --rm mcp-matrix-ro check
+#
+# MCP over stdio: the MCP client starts the server itself, e.g. in ZeroClaw:
+#   command = "docker"
+#   args = ["compose", "-f", "/opt/mcp-matrix-ro/docker-compose.yml", "run", "--rm", "-T", "mcp-matrix-ro", "serve"]
+#
+# Nightly digest (host cron):
+#   30 6 * * * cd /opt/mcp-matrix-ro && docker compose run --rm -T digest >> /var/lib/brief/chat.md
+
+x-common: &common
+  image: ghcr.io/roiarthurb/mcp-matrix-ro:latest
+  env_file: .env
+  environment:
+    MATRIX_ACCESS_TOKEN_FILE: /run/secrets/matrix_token
+    MXREAD_STATE_DIR: /state
+  secrets:
+    - matrix_token
+  volumes:
+    - state:/state
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  # stdio server: no ports are published.
+
+services:
+  mcp-matrix-ro:
+    <<: *common
+    stdin_open: true
+    command: ["serve"]
+
+  digest:
+    <<: *common
+    profiles: ["digest"] # only runs when asked for: docker compose run digest
+    command: ["digest", "--since", "24h", "--format", "md", "--cursor-file", "/state/digest.cursor"]
+
+secrets:
+  matrix_token:
+    file: ./matrix_token.txt
+
+volumes:
+  state:

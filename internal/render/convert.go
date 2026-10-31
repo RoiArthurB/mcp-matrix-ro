@@ -10,8 +10,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/RoiArthurB/mxread/internal/matrix"
-	"github.com/RoiArthurB/mxread/internal/model"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/matrix"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/model"
 )
 
 // ReplySnippet is the length of the quoted parent in a reply.

@@ -22,7 +22,7 @@ type rule struct {
 // where noted (state keys may be empty).
 const seg = `[^/]+`
 
-// allowlist is the complete set of Matrix endpoints mxread may call (SPEC §3).
+// allowlist is the complete set of Matrix endpoints mcp-matrix-ro may call (SPEC §3).
 // Do not add entries without the owner's approval.
 var allowlist = []rule{
 	{http.MethodGet, regexp.MustCompile(`^/_matrix/client/versions$`)},
@@ -38,6 +38,9 @@ var allowlist = []rule{
 	{http.MethodGet, regexp.MustCompile(`^/_matrix/client/v3/rooms/` + seg + `/context/` + seg + `$`)},
 	{http.MethodGet, regexp.MustCompile(`^/_matrix/client/v3/profile/` + seg + `$`)},
 	{http.MethodPost, regexp.MustCompile(`^/_matrix/client/v3/search$`)},
+	// Password login (MATRIX_USER/MATRIX_PASSWORD). Added at the owner's
+	// request on 2026-10-31; it only obtains a token for this device.
+	{http.MethodPost, regexp.MustCompile(`^/_matrix/client/v3/login$`)},
 }
 
 // CheckAllowed reports whether method+URL is on the read-only allowlist.

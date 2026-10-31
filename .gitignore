@@ -1,2 +1,5 @@
-/mxread
+/mcp-matrix-ro
 /dist/
+.env
+matrix_token.txt
+docker-compose.yml

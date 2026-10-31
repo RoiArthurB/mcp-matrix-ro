@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RoiArthurB/mxread/internal/matrix"
-	"github.com/RoiArthurB/mxread/internal/model"
-	"github.com/RoiArthurB/mxread/internal/render"
-	"github.com/RoiArthurB/mxread/internal/resolve"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/matrix"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/model"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/render"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/resolve"
 )
 
 // SearchParams are the search tool inputs.

@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RoiArthurB/mxread/internal/app"
-	"github.com/RoiArthurB/mxread/internal/config"
-	"github.com/RoiArthurB/mxread/internal/matrix"
-	"github.com/RoiArthurB/mxread/internal/render"
-	"github.com/RoiArthurB/mxread/internal/resolve"
-	"github.com/RoiArthurB/mxread/internal/testutil/fakehs"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/app"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/config"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/matrix"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/render"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/resolve"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/testutil/fakehs"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")

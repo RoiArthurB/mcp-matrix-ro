@@ -14,13 +14,16 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/RoiArthurB/mxread/internal/matrix"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/matrix"
 )
 
 // Server is a running fake homeserver.
 type Server struct {
 	*httptest.Server
 	SearchUnsupported bool
+	// ValidToken is the token accepted (defaults to Token); /login returns it.
+	ValidToken string
+	Logins     int
 
 	mu       sync.Mutex
 	requests []string
@@ -61,6 +64,7 @@ func New() *Server {
 	load("events", &s.events)
 	load("search", &s.search)
 	load("profiles", &s.profiles)
+	s.ValidToken = Token
 	s.Server = httptest.NewServer(s)
 	return s
 }
@@ -103,7 +107,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
-	if r.Header.Get("Authorization") != "Bearer "+Token && r.URL.Path != "/_matrix/client/versions" {
+	if r.URL.Path == "/_matrix/client/v3/login" && r.Method == http.MethodPost {
+		s.login(w, r)
+		return
+	}
+	s.mu.Lock()
+	valid := s.ValidToken
+	s.mu.Unlock()
+	if r.Header.Get("Authorization") != "Bearer "+valid && r.URL.Path != "/_matrix/client/versions" {
 		errJSON(w, 401, "M_UNKNOWN_TOKEN")
 		return
 	}
@@ -185,4 +196,50 @@ func (s *Server) room(w http.ResponseWriter, r *http.Request) {
 	default:
 		errJSON(w, 404, "M_NOT_FOUND")
 	}
+}
+
+// Password is the password the fake server accepts for user "archive".
+const Password = "correct horse"
+
+func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Type       string `json:"type"`
+		Identifier struct {
+			Type string `json:"type"`
+			User string `json:"user"`
+		} `json:"identifier"`
+		Password string `json:"password"`
+		DeviceID string `json:"device_id"`
+	}
+	if json.NewDecoder(r.Body).Decode(&req) != nil || req.Type != "m.login.password" || req.Identifier.Type != "m.id.user" {
+		errJSON(w, 400, "M_BAD_JSON")
+		return
+	}
+	if (req.Identifier.User != "archive" && req.Identifier.User != "@archive:dom") || req.Password != Password {
+		errJSON(w, 403, "M_FORBIDDEN")
+		return
+	}
+	s.mu.Lock()
+	s.Logins++
+	tok := s.ValidToken
+	s.mu.Unlock()
+	dev := req.DeviceID
+	if dev == "" {
+		dev = "NEWDEVICE"
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"access_token": tok, "device_id": dev, "user_id": "@archive:dom"})
+}
+
+// Rotate makes the current token invalid (as after a soft logout).
+func (s *Server) Rotate(newToken string) {
+	s.mu.Lock()
+	s.ValidToken = newToken
+	s.mu.Unlock()
+}
+
+// LoginCount returns the number of successful logins.
+func (s *Server) LoginCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Logins
 }

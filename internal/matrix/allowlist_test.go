@@ -75,6 +75,10 @@ var forbidden = []struct{ method, path string }{
 	// old API versions / prefixes
 	{"GET", "/_matrix/client/r0/joined_rooms"},
 	{"GET", "/_matrix/client/v3/joined_rooms/"},
+	{"GET", "/_matrix/client/v3/login"},
+	{"POST", "/_matrix/client/v3/login/get_token"},
+	{"POST", "/_matrix/client/v3/refresh"},
+	{"POST", "/_matrix/client/v3/register"},
 	{"GET", "/_synapse/admin/v1/users"},
 	// traversal / smuggling
 	{"GET", "/_matrix/client/v3/rooms/!r:ex/../../join/!r:ex"},
@@ -148,6 +152,12 @@ func (rc *recorder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := CheckAllowed(r.Method, r.URL); err != nil {
 		rc.bad = append(rc.bad, err.Error())
 	}
+	if r.URL.Path == "/_matrix/client/v3/login" {
+		rc.mu.Unlock()
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = w.Write([]byte(`{"access_token":"secret","device_id":"D","user_id":"@u:x"}`))
+		return
+	}
 	if r.Header.Get("Authorization") != "Bearer secret" {
 		rc.bad = append(rc.bad, "missing auth on "+r.URL.Path)
 	}
@@ -190,6 +200,7 @@ func TestEveryClientCallIsAllowlisted(t *testing.T) {
 		func() error { _, e := c.Context(ctx, room, ev, 1); return e },
 		func() error { _, e := c.Profile(ctx, user); return e },
 		func() error { _, e := c.Search(ctx, SearchRequest{Term: "x", Limit: 1}); return e },
+		func() error { _, e := c.Login(ctx, LoginRequest{User: "u", Password: "p"}); return e },
 	}
 	for i, f := range calls {
 		if err := f(); err != nil {
@@ -247,5 +258,38 @@ func TestErrorsDoNotLeakToken(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "supersecret") {
 		t.Fatal("token leaked in error")
+	}
+}
+
+func TestReauthOnRejectedToken(t *testing.T) {
+	var logins int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/_matrix/client/v3/login" {
+			t.Error("Reauth is a callback; the client must not log in by itself")
+		}
+		if r.Header.Get("Authorization") != "Bearer fresh" {
+			w.WriteHeader(401)
+			_, _ = w.Write([]byte(`{"errcode":"M_UNKNOWN_TOKEN","error":"expired","soft_logout":true}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"user_id":"@u:x"}`))
+	}))
+	defer srv.Close()
+	c, _ := New(Options{Homeserver: srv.URL, Token: "stale", Reauth: func(context.Context) (string, error) {
+		logins++
+		return "fresh", nil
+	}})
+	for i := 0; i < 3; i++ {
+		if w, err := c.WhoAmI(context.Background()); err != nil || w.UserID != "@u:x" {
+			t.Fatalf("whoami: %v %v", w, err)
+		}
+	}
+	if logins != 1 {
+		t.Fatalf("want exactly 1 re-login, got %d", logins)
+	}
+	// A failing re-login surfaces as an error, without looping.
+	c2, _ := New(Options{Homeserver: srv.URL, Reauth: func(context.Context) (string, error) { return "still-bad", nil }})
+	if _, err := c2.WhoAmI(context.Background()); !IsAuth(err) {
+		t.Fatalf("want auth error, got %v", err)
 	}
 }

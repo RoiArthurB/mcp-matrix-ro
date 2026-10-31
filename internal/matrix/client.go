@@ -16,27 +16,34 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // MaxConcurrent bounds in-flight requests per Client (SPEC §8).
 const MaxConcurrent = 4
 
-// Client is the only way mxread talks to the homeserver.
+// Client is the only way mcp-matrix-ro talks to the homeserver.
 type Client struct {
-	base  *url.URL
+	base   *url.URL
+	http   *http.Client
+	sem    chan struct{}
+	log    *slog.Logger
+	reauth func(ctx context.Context) (string, error)
+
+	mu    sync.Mutex
 	token string
-	http  *http.Client
-	sem   chan struct{}
-	log   *slog.Logger
 }
 
 // Options configures a Client.
 type Options struct {
 	Homeserver string
 	Token      string
-	Timeout    time.Duration
-	Logger     *slog.Logger
+	// Reauth, if set, obtains a new access token (password login). It is
+	// called when Token is empty and once after an authentication failure.
+	Reauth  func(ctx context.Context) (string, error)
+	Timeout time.Duration
+	Logger  *slog.Logger
 	// Transport is the underlying transport (tests); defaults to http.DefaultTransport.
 	Transport http.RoundTripper
 }
@@ -50,7 +57,7 @@ func New(o Options) (*Client, error) {
 	if u.Scheme != "https" && u.Scheme != "http" || u.Host == "" {
 		return nil, fmt.Errorf("invalid homeserver URL %q: need http(s)://host", o.Homeserver)
 	}
-	if o.Token == "" {
+	if o.Token == "" && o.Reauth == nil {
 		return nil, errors.New("missing access token")
 	}
 	if o.Timeout <= 0 {
@@ -63,7 +70,7 @@ func New(o Options) (*Client, error) {
 	if next == nil {
 		next = http.DefaultTransport
 	}
-	c := &Client{base: u, token: o.Token, sem: make(chan struct{}, MaxConcurrent), log: o.Logger}
+	c := &Client{base: u, token: o.Token, reauth: o.Reauth, sem: make(chan struct{}, MaxConcurrent), log: o.Logger}
 	g := &guardTransport{scheme: u.Scheme, host: u.Host, next: next, log: func(m, p string) {
 		c.log.Debug("matrix request", "method", m, "path", p)
 	}}
@@ -116,8 +123,59 @@ func path(segs ...string) string {
 	return b.String()
 }
 
-// do performs one request. rawPath is already escaped.
+const loginPath = "/_matrix/client/v3/login"
+
+func (c *Client) currentToken() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.token
+}
+
+// refresh replaces the token via Reauth, unless another goroutine already
+// replaced the token that failed.
+func (c *Client) refresh(ctx context.Context, failed string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.token != failed {
+		return nil
+	}
+	tok, err := c.reauth(ctx)
+	if err != nil {
+		return err
+	}
+	c.token = tok
+	return nil
+}
+
+// do performs one request, logging in again once if the token is missing or
+// rejected and a Reauth function is configured. rawPath is already escaped.
 func (c *Client) do(ctx context.Context, method, rawPath string, q url.Values, body any, out any) error {
+	if rawPath == loginPath {
+		// No token, and no lock: Login may run inside refresh via Reauth.
+		return c.doOnce(ctx, method, rawPath, q, body, out, "")
+	}
+	if c.reauth == nil {
+		return c.doOnce(ctx, method, rawPath, q, body, out, c.currentToken())
+	}
+	tok := c.currentToken()
+	if tok == "" {
+		if err := c.refresh(ctx, ""); err != nil {
+			return err
+		}
+		tok = c.currentToken()
+	}
+	err := c.doOnce(ctx, method, rawPath, q, body, out, tok)
+	if !IsAuth(err) {
+		return err
+	}
+	c.log.Info("access token rejected; logging in again")
+	if rerr := c.refresh(ctx, tok); rerr != nil {
+		return rerr
+	}
+	return c.doOnce(ctx, method, rawPath, q, body, out, c.currentToken())
+}
+
+func (c *Client) doOnce(ctx context.Context, method, rawPath string, q url.Values, body any, out any, token string) error {
 	u := *c.base
 	u.RawPath = strings.TrimRight(c.base.EscapedPath(), "/") + rawPath
 	p, err := url.PathUnescape(u.RawPath)
@@ -139,7 +197,9 @@ func (c *Client) do(ctx context.Context, method, rawPath string, q url.Values, b
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	if rawPath != loginPath {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -319,4 +379,49 @@ func (c *Client) Search(ctx context.Context, r SearchRequest) (*SearchResponse, 
 	}
 	var out SearchResponse
 	return &out, c.do(ctx, http.MethodPost, "/_matrix/client/v3/search", q, body, &out)
+}
+
+// LoginRequest is a password login (m.login.password).
+type LoginRequest struct {
+	User       string // MXID or localpart
+	Password   string
+	DeviceID   string // reuse a previous device instead of creating a new one
+	DeviceName string
+}
+
+// LoginResponse is the subset of the /login response mxread keeps.
+type LoginResponse struct {
+	AccessToken string `json:"access_token"`
+	DeviceID    string `json:"device_id"`
+	UserID      string `json:"user_id"`
+}
+
+// Login calls POST /login with a password. It is the only allowlisted call
+// that changes server state: it creates (or reuses) a device for this client.
+func (c *Client) Login(ctx context.Context, r LoginRequest) (*LoginResponse, error) {
+	body := map[string]any{
+		"type":       "m.login.password",
+		"identifier": map[string]any{"type": "m.id.user", "user": r.User},
+		"password":   r.Password,
+	}
+	if r.DeviceID != "" {
+		body["device_id"] = r.DeviceID
+	}
+	if r.DeviceName != "" {
+		body["initial_device_display_name"] = r.DeviceName
+	}
+	var out LoginResponse
+	if err := c.do(ctx, http.MethodPost, loginPath, nil, body, &out); err != nil {
+		var me *Error
+		if errors.As(err, &me) && me.Status == http.StatusForbidden {
+			// Wrong credentials are reported as 403 M_FORBIDDEN; surface them
+			// as an authentication failure (IsAuth).
+			return nil, &Error{Status: http.StatusUnauthorized, ErrCode: me.ErrCode, Message: "login failed: " + me.Message}
+		}
+		return nil, err
+	}
+	if out.AccessToken == "" {
+		return nil, errors.New("matrix: login returned no access token")
+	}
+	return &out, nil
 }

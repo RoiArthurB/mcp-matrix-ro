@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RoiArthurB/mxread/internal/config"
-	"github.com/RoiArthurB/mxread/internal/matrix"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/config"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/matrix"
 )
 
 func TestFold(t *testing.T) {

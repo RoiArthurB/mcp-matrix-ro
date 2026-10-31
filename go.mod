@@ -1,4 +1,4 @@
-module github.com/RoiArthurB/mxread
+module github.com/RoiArthurB/mcp-matrix-ro
 
 go 1.25.0
 

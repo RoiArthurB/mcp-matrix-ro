@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RoiArthurB/mxread/internal/model"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/model"
 )
 
 // TTL is how long the room index and names are considered fresh (SPEC §8).

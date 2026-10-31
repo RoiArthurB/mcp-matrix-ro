@@ -11,11 +11,11 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/RoiArthurB/mxread/internal/app"
-	"github.com/RoiArthurB/mxread/internal/config"
-	"github.com/RoiArthurB/mxread/internal/matrix"
-	"github.com/RoiArthurB/mxread/internal/testutil/fakehs"
-	"github.com/RoiArthurB/mxread/internal/tools"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/app"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/config"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/matrix"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/testutil/fakehs"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/tools"
 )
 
 // MaxSchemaChars is the budget for all tool definitions together (SPEC §10).
@@ -34,7 +34,7 @@ func connect(t *testing.T) (*mcp.ClientSession, *fakehs.Server) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	mc, _ := matrix.New(matrix.Options{Homeserver: cfg.Homeserver, Token: cfg.Token, Logger: log})
 	a := app.New(cfg, mc, log, func() time.Time { return time.UnixMilli(1793448000000) })
-	s := mcp.NewServer(&mcp.Implementation{Name: "mxread", Version: "test"}, nil)
+	s := mcp.NewServer(&mcp.Implementation{Name: "mcp-matrix-ro", Version: "test"}, nil)
 	tools.Register(s, a)
 	st, ct := mcp.NewInMemoryTransports()
 	ctx := context.Background()

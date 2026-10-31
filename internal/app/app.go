@@ -1,4 +1,4 @@
-// Package app implements mxread's operations (recent, chats, read, search,
+// Package app implements mcp-matrix-ro's operations (recent, chats, read, search,
 // chat_info, check) on top of the read-only Matrix client. The MCP tools and
 // the CLI are thin wrappers around it.
 package app
@@ -15,11 +15,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RoiArthurB/mxread/internal/config"
-	"github.com/RoiArthurB/mxread/internal/matrix"
-	"github.com/RoiArthurB/mxread/internal/model"
-	"github.com/RoiArthurB/mxread/internal/render"
-	"github.com/RoiArthurB/mxread/internal/resolve"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/config"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/matrix"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/model"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/render"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/resolve"
 )
 
 // App wires config, client, resolver and converter.
@@ -432,7 +432,7 @@ func (a *App) ChatInfo(ctx context.Context, chat string) (*model.ChatInfoResult,
 
 // ---- check ----
 
-// CheckResult is the output of `mxread check`.
+// CheckResult is the output of `mcp-matrix-ro check`.
 type CheckResult struct {
 	UserID    string
 	DeviceID  string
@@ -461,7 +461,7 @@ func (a *App) Check(ctx context.Context) (*CheckResult, error) {
 		return nil, fmt.Errorf("versions: %w", err)
 	}
 	res.Versions = v.Versions
-	switch _, err := a.MC.Search(ctx, matrix.SearchRequest{Term: "mxread", Limit: 1}); {
+	switch _, err := a.MC.Search(ctx, matrix.SearchRequest{Term: "mcp-matrix-ro", Limit: 1}); {
 	case err == nil:
 		res.Search = "supported (server mode)"
 	case matrix.IsUnsupported(err):

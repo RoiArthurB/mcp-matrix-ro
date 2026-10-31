@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/RoiArthurB/mxread/internal/app"
-	"github.com/RoiArthurB/mxread/internal/render"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/app"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/render"
 )
 
 func TestRecent(t *testing.T) {

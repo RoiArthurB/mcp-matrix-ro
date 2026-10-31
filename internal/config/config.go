@@ -1,4 +1,4 @@
-// Package config loads mxread settings from the environment, with CLI flag overrides.
+// Package config loads mcp-matrix-ro settings from the environment, with CLI flag overrides.
 package config
 
 import (
@@ -24,6 +24,8 @@ type Network struct {
 type Config struct {
 	Homeserver  string
 	Token       string
+	User        string // password login, used when no token is configured
+	Password    string
 	TZ          *time.Location
 	Me          []string // empty = whoami user only
 	Networks    []Network
@@ -38,7 +40,7 @@ type Config struct {
 
 // Raw holds the string form of every setting, filled from env then flags.
 type Raw struct {
-	Homeserver, Token, TokenFile, TZ, Me, Networks, Exclude, ExcludeBots,
+	Homeserver, Token, TokenFile, User, Password, PasswordFile, TZ, Me, Networks, Exclude, ExcludeBots,
 	MaxBody, StateDir, HTTPTimeout, Log string
 }
 
@@ -58,18 +60,21 @@ func FromEnv(getenv func(string) string) Raw {
 		return d
 	}
 	return Raw{
-		Homeserver:  getenv("MATRIX_HOMESERVER"),
-		Token:       getenv("MATRIX_ACCESS_TOKEN"),
-		TokenFile:   getenv("MATRIX_ACCESS_TOKEN_FILE"),
-		TZ:          def("MXREAD_TZ", DefaultTZ),
-		Me:          getenv("MXREAD_ME"),
-		Networks:    def("MXREAD_NETWORKS", DefaultNetworks),
-		Exclude:     getenv("MXREAD_EXCLUDE"),
-		ExcludeBots: def("MXREAD_EXCLUDE_BOTS", DefaultExcludeBots),
-		MaxBody:     def("MXREAD_MAX_BODY", "500"),
-		StateDir:    getenv("MXREAD_STATE_DIR"),
-		HTTPTimeout: def("MXREAD_HTTP_TIMEOUT", "20s"),
-		Log:         def("MXREAD_LOG", "warn"),
+		Homeserver:   getenv("MATRIX_HOMESERVER"),
+		Token:        getenv("MATRIX_ACCESS_TOKEN"),
+		TokenFile:    getenv("MATRIX_ACCESS_TOKEN_FILE"),
+		User:         getenv("MATRIX_USER"),
+		Password:     getenv("MATRIX_PASSWORD"),
+		PasswordFile: getenv("MATRIX_PASSWORD_FILE"),
+		TZ:           def("MXREAD_TZ", DefaultTZ),
+		Me:           getenv("MXREAD_ME"),
+		Networks:     def("MXREAD_NETWORKS", DefaultNetworks),
+		Exclude:      getenv("MXREAD_EXCLUDE"),
+		ExcludeBots:  def("MXREAD_EXCLUDE_BOTS", DefaultExcludeBots),
+		MaxBody:      def("MXREAD_MAX_BODY", "500"),
+		StateDir:     getenv("MXREAD_STATE_DIR"),
+		HTTPTimeout:  def("MXREAD_HTTP_TIMEOUT", "20s"),
+		Log:          def("MXREAD_LOG", "warn"),
 	}
 }
 
@@ -80,10 +85,12 @@ func lookup(getenv func(string) string, k string) (string, bool) {
 }
 
 // RegisterFlags adds override flags for every setting to fs.
-// The token itself is deliberately not a flag (it would show in `ps`).
+// The token and password are deliberately not flags (they would show in `ps`).
 func (r *Raw) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&r.Homeserver, "homeserver", r.Homeserver, "homeserver base URL (MATRIX_HOMESERVER)")
 	fs.StringVar(&r.TokenFile, "token-file", r.TokenFile, "file containing the access token (MATRIX_ACCESS_TOKEN_FILE)")
+	fs.StringVar(&r.User, "user", r.User, "Matrix user ID or localpart for password login (MATRIX_USER)")
+	fs.StringVar(&r.PasswordFile, "password-file", r.PasswordFile, "file containing the password (MATRIX_PASSWORD_FILE)")
 	fs.StringVar(&r.TZ, "tz", r.TZ, "display timezone (MXREAD_TZ)")
 	fs.StringVar(&r.Me, "me", r.Me, "comma list of user IDs rendered as 'me' (MXREAD_ME)")
 	fs.StringVar(&r.Networks, "networks", r.Networks, "name=regex pairs for network tagging (MXREAD_NETWORKS)")
@@ -109,8 +116,23 @@ func (r Raw) Resolve() (*Config, error) {
 		}
 		c.Token = strings.TrimSpace(string(b))
 	}
-	if c.Token == "" {
-		return nil, errors.New("MATRIX_ACCESS_TOKEN or MATRIX_ACCESS_TOKEN_FILE is required")
+	c.User = strings.TrimSpace(r.User)
+	c.Password = r.Password
+	if r.PasswordFile != "" {
+		b, err := os.ReadFile(r.PasswordFile)
+		if err != nil {
+			return nil, fmt.Errorf("reading MATRIX_PASSWORD_FILE: %w", err)
+		}
+		c.Password = strings.TrimRight(string(b), "\r\n")
+	}
+	switch {
+	case c.Token != "":
+		c.User, c.Password = "", "" // a configured token always wins
+	case c.User != "" && c.Password != "":
+	case c.User != "":
+		return nil, errors.New("MATRIX_USER is set but MATRIX_PASSWORD / MATRIX_PASSWORD_FILE is missing")
+	default:
+		return nil, errors.New("set MATRIX_ACCESS_TOKEN (or _FILE), or MATRIX_USER + MATRIX_PASSWORD (or _FILE)")
 	}
 	var err error
 	if c.TZ, err = time.LoadLocation(r.TZ); err != nil {
@@ -163,12 +185,12 @@ func (r Raw) Resolve() (*Config, error) {
 
 func defaultStateDir() string {
 	if x := os.Getenv("XDG_STATE_HOME"); x != "" {
-		return filepath.Join(x, "mxread")
+		return filepath.Join(x, "mcp-matrix-ro")
 	}
 	if h, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(h, ".local", "state", "mxread")
+		return filepath.Join(h, ".local", "state", "mcp-matrix-ro")
 	}
-	return filepath.Join(os.TempDir(), "mxread")
+	return filepath.Join(os.TempDir(), "mcp-matrix-ro")
 }
 
 func splitList(s string) []string {
