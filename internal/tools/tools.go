@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/RoiArthurB/mxread/internal/app"
@@ -59,6 +60,18 @@ type ChatInfoIn struct {
 
 var no = false
 
+// lenient infers the input schema for T but accepts unknown properties: small
+// models sometimes add extra arguments, and a retry costs seconds. Dropping
+// "additionalProperties": false also saves schema tokens.
+func lenient[T any]() *jsonschema.Schema {
+	s, err := jsonschema.For[T](nil)
+	if err != nil {
+		panic(err)
+	}
+	s.AdditionalProperties = nil
+	return s
+}
+
 func annotations() *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: &no, IdempotentHint: true}
 }
@@ -67,6 +80,7 @@ func annotations() *mcp.ToolAnnotations {
 func Register(s *mcp.Server, a *app.App) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "recent",
+		InputSchema: lenient[RecentIn](),
 		Description: "Latest messages across all chats, grouped by chat.\nUse for: what are my latest messages, what did I miss, daily summary.",
 		Annotations: annotations(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in RecentIn) (*mcp.CallToolResult, any, error) {
@@ -75,6 +89,7 @@ func Register(s *mcp.Server, a *app.App) {
 	})
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "chats",
+		InputSchema: lenient[ChatsIn](),
 		Description: "List chats (name, network, DM/group, last activity, room ID), most recent first.\nUse to find a chat or see which chats are active.",
 		Annotations: annotations(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in ChatsIn) (*mcp.CallToolResult, any, error) {
@@ -83,6 +98,7 @@ func Register(s *mcp.Server, a *app.App) {
 	})
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "read",
+		InputSchema: lenient[ReadIn](),
 		Description: "Read one chat in detail, oldest to newest, with a cursor for older messages.\nUse to read a conversation.",
 		Annotations: annotations(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in ReadIn) (*mcp.CallToolResult, any, error) {
@@ -91,6 +107,7 @@ func Register(s *mcp.Server, a *app.App) {
 	})
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "search",
+		InputSchema: lenient[SearchIn](),
 		Description: "Find messages containing words, with chat, time and sender.\nUse to find who said what, when.",
 		Annotations: annotations(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchIn) (*mcp.CallToolResult, any, error) {
@@ -99,6 +116,7 @@ func Register(s *mcp.Server, a *app.App) {
 	})
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "chat_info",
+		InputSchema: lenient[ChatInfoIn](),
 		Description: "Chat details: name, topic, network, DM/group, members.\nUse for who is in a chat.",
 		Annotations: annotations(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in ChatInfoIn) (*mcp.CallToolResult, any, error) {

@@ -180,7 +180,10 @@ func TestEveryClientCallIsAllowlisted(t *testing.T) {
 		func() error { _, e := c.RoomState(ctx, room); return e },
 		func() error { var v any; return c.StateEvent(ctx, room, "m.room.name", "", &v) },
 		func() error { var v any; return c.StateEvent(ctx, room, "m.room.member", user, &v) },
-		func() error { _, e := c.Messages(ctx, room, MessagesOpts{Limit: 5, Filter: map[string]any{}}); return e },
+		func() error {
+			_, e := c.Messages(ctx, room, MessagesOpts{Limit: 5, Filter: map[string]any{}})
+			return e
+		},
 		func() error { _, e := c.Members(ctx, room); return e },
 		func() error { _, e := c.JoinedMembers(ctx, room); return e },
 		func() error { _, e := c.Event(ctx, room, ev); return e },
