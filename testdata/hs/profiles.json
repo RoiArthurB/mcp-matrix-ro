@@ -1,0 +1,11 @@
+{
+ "@alice:dom": {
+  "displayname": "Alice"
+ },
+ "@bob:dom": {
+  "displayname": "Bob"
+ },
+ "@carol:dom": {
+  "displayname": "Carol"
+ }
+}

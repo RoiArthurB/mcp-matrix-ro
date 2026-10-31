@@ -1,0 +1,14 @@
+{
+ "$e008": {
+  "type": "m.room.message",
+  "sender": "@whatsapp_84911111111:dom",
+  "event_id": "$e008",
+  "origin_server_ts": 1792893600000,
+  "content": {
+   "msgtype": "m.text",
+   "body": "Nhớ gọi cho bà nội nhé"
+  },
+  "unsigned": {},
+  "room_id": "!dm-me:dom"
+ }
+}

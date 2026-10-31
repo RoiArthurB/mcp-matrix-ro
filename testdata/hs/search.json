@@ -1,0 +1,62 @@
+{
+ "search_categories": {
+  "room_events": {
+   "count": 2,
+   "results": [
+    {
+     "rank": 1,
+     "result": {
+      "type": "m.room.message",
+      "sender": "@whatsapp_84933333333:dom",
+      "event_id": "$e025",
+      "origin_server_ts": 1793443800000,
+      "content": {
+       "msgtype": "m.text",
+       "body": "Meeting moved to Monday 10:00, same room.\n\n\n\nBring the demo laptop."
+      },
+      "unsigned": {},
+      "room_id": "!tango:dom"
+     },
+     "context": {
+      "events_before": [
+       {
+        "type": "m.room.message",
+        "sender": "@whatsapp_84933333333:dom",
+        "event_id": "$e024",
+        "origin_server_ts": 1793443500000,
+        "content": {},
+        "unsigned": {
+         "redacted_because": {
+          "type": "m.room.redaction",
+          "sender": "@whatsapp_84933333333:dom",
+          "content": {}
+         }
+        }
+       }
+      ],
+      "events_after": []
+     }
+    },
+    {
+     "rank": 1,
+     "result": {
+      "type": "m.room.message",
+      "sender": "@whatsapp_84922222222:dom",
+      "event_id": "$e030",
+      "origin_server_ts": 1793242800000,
+      "content": {
+       "msgtype": "m.text",
+       "body": "the meeting on Friday is cancelled"
+      },
+      "unsigned": {},
+      "room_id": "!tango:dom"
+     },
+     "context": {
+      "events_before": [],
+      "events_after": []
+     }
+    }
+   ]
+  }
+ }
+}

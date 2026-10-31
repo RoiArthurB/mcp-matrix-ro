@@ -1,0 +1,131 @@
+{
+ "!tango:dom": [
+  {
+   "type": "m.room.name",
+   "state_key": "",
+   "sender": "@archive:dom",
+   "event_id": "$e040",
+   "origin_server_ts": 1790787600000,
+   "content": {
+    "name": "TANGO team"
+   }
+  },
+  {
+   "type": "m.room.topic",
+   "state_key": "",
+   "sender": "@archive:dom",
+   "event_id": "$e041",
+   "origin_server_ts": 1790787600000,
+   "content": {
+    "topic": "TANGO project – robotics & ROS2"
+   }
+  },
+  {
+   "type": "m.room.create",
+   "state_key": "",
+   "sender": "@whatsappbot:dom",
+   "event_id": "$e042",
+   "origin_server_ts": 1790874000000,
+   "content": {
+    "room_version": "10"
+   }
+  },
+  {
+   "type": "m.room.member",
+   "state_key": "@archive:dom",
+   "sender": "@archive:dom",
+   "event_id": "$e043",
+   "origin_server_ts": 1790787600000,
+   "content": {
+    "membership": "join"
+   }
+  },
+  {
+   "type": "m.room.member",
+   "state_key": "@whatsapp_84900000001:dom",
+   "sender": "@whatsapp_84900000001:dom",
+   "event_id": "$e044",
+   "origin_server_ts": 1790787600000,
+   "content": {
+    "membership": "join",
+    "displayname": "Arthur"
+   }
+  },
+  {
+   "type": "m.room.member",
+   "state_key": "@whatsappbot:dom",
+   "sender": "@whatsappbot:dom",
+   "event_id": "$e045",
+   "origin_server_ts": 1790787600000,
+   "content": {
+    "membership": "join",
+    "displayname": "WhatsApp bridge bot"
+   }
+  },
+  {
+   "type": "m.room.member",
+   "state_key": "@whatsapp_84922222222:dom",
+   "sender": "@whatsapp_84922222222:dom",
+   "event_id": "$e046",
+   "origin_server_ts": 1790787600000,
+   "content": {
+    "membership": "join",
+    "displayname": "Baptiste"
+   }
+  },
+  {
+   "type": "m.room.member",
+   "state_key": "@whatsapp_84933333333:dom",
+   "sender": "@whatsapp_84933333333:dom",
+   "event_id": "$e047",
+   "origin_server_ts": 1790787600000,
+   "content": {
+    "membership": "join",
+    "displayname": "Linh"
+   }
+  },
+  {
+   "type": "m.room.member",
+   "state_key": "@whatsapp_84944444444:dom",
+   "sender": "@whatsapp_84944444444:dom",
+   "event_id": "$e048",
+   "origin_server_ts": 1790787600000,
+   "content": {
+    "membership": "join",
+    "displayname": "Quang"
+   }
+  },
+  {
+   "type": "m.room.member",
+   "state_key": "@whatsapp_84955555555:dom",
+   "sender": "@whatsapp_84955555555:dom",
+   "event_id": "$e049",
+   "origin_server_ts": 1790787600000,
+   "content": {
+    "membership": "join"
+   }
+  },
+  {
+   "type": "m.room.member",
+   "state_key": "@whatsapp_84966666666:dom",
+   "sender": "@whatsapp_84966666666:dom",
+   "event_id": "$e050",
+   "origin_server_ts": 1790787600000,
+   "content": {
+    "membership": "join",
+    "displayname": "Hà"
+   }
+  },
+  {
+   "type": "m.room.member",
+   "state_key": "@whatsapp_84977777777:dom",
+   "sender": "@whatsapp_84977777777:dom",
+   "event_id": "$e051",
+   "origin_server_ts": 1790787600000,
+   "content": {
+    "membership": "leave",
+    "displayname": "Left person"
+   }
+  }
+ ]
+}
