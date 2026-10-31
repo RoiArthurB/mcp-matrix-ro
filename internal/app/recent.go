@@ -100,7 +100,8 @@ func (a *App) Recent(ctx context.Context, p RecentParams) (*model.RecentResult, 
 			continue
 		}
 		cm := model.ChatMessages{Chat: r.Chat, Count: len(in)}
-		cm.More = r.Limited && oldestTS(r.Events) >= since // window not fully covered
+		cm.AtLeast = r.Limited && oldestTS(r.Events) >= since // window not fully covered
+		cm.More = cm.AtLeast
 		if len(in) > perChat {
 			in = in[len(in)-perChat:]
 			cm.More = true

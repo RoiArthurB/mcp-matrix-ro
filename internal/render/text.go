@@ -119,12 +119,16 @@ func Recent(r *model.RecentResult, c Clock) string {
 	}
 	fmt.Fprintf(&b, "Messages since %s%s — %s in %s. Now %s. %s\n",
 		c.Full(r.Since), scope, plural(r.Total, "message", "messages"), plural(len(r.Chats), "chat", "chats"),
-		c.Short(r.Now), Disclaimer)
+		c.Date(r.Now), Disclaimer)
 	if r.Truncated {
 		b.WriteString("(Total limit reached: older messages omitted. Narrow with since/chat or raise limit.)\n")
 	}
 	for _, ch := range r.Chats {
-		fmt.Fprintf(&b, "\n## %s · %s · %s", chatLabel(ch.Chat), ch.ID, plural(ch.Count, "msg", "msgs"))
+		count := plural(ch.Count, "msg", "msgs")
+		if ch.AtLeast {
+			count = fmt.Sprintf("%d+ msgs", ch.Count)
+		}
+		fmt.Fprintf(&b, "\n## %s · %s · %s", chatLabel(ch.Chat), ch.ID, count)
 		if ch.More || len(ch.Messages) < ch.Count {
 			fmt.Fprintf(&b, " (showing last %d; use read for more)", len(ch.Messages))
 		}

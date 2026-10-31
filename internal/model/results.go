@@ -3,8 +3,9 @@ package model
 // ChatMessages is one chat block in a recent/digest result.
 type ChatMessages struct {
 	Chat
-	Count    int       `json:"count"`          // messages in the window that were found
-	More     bool      `json:"more,omitempty"` // older messages in the window were not shown
+	Count    int       `json:"count"`               // messages in the window that were found
+	More     bool      `json:"more,omitempty"`      // older messages in the window were not shown
+	AtLeast  bool      `json:"count_min,omitempty"` // Count is a lower bound (window not fully scanned)
 	Messages []Message `json:"messages"`
 }
 
