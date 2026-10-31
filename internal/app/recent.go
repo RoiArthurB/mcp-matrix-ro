@@ -71,44 +71,53 @@ func (a *App) Recent(ctx context.Context, p RecentParams) (*model.RecentResult, 
 		selected = append(selected, r)
 	}
 
-	// Backfill chats whose sync timeline was cut before reaching `since`.
+	// Per chat (bounded concurrency): backfill if the sync window ended
+	// before `since`, convert, cap to perChat, then resolve reply parents
+	// only for the messages actually shown.
+	blocks := make([]*model.ChatMessages, len(selected))
 	var wg sync.WaitGroup
-	for _, r := range selected {
-		if !needsBackfill(r, since, perChat) {
-			continue
-		}
+	sem := make(chan struct{}, matrix.MaxConcurrent)
+	for i, r := range selected {
 		wg.Add(1)
-		go func(r *resolve.RoomData) {
+		go func(i int, r *resolve.RoomData) {
 			defer wg.Done()
-			a.backfill(ctx, r, since, perChat)
-		}(r)
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if needsBackfill(r, since, perChat) {
+				a.backfill(ctx, r, since, perChat)
+			}
+			msgs := a.convert(ctx, r.ID, r.Events, 0)
+			var in []model.Message
+			for _, m := range msgs {
+				if m.TS >= since {
+					in = append(in, m)
+				}
+			}
+			if len(in) == 0 {
+				return
+			}
+			cm := &model.ChatMessages{Chat: r.Chat, Count: len(in)}
+			cm.AtLeast = r.Limited && oldestTS(r.Events) >= since // window not fully covered
+			cm.More = cm.AtLeast
+			if len(in) > perChat {
+				in = in[len(in)-perChat:]
+				cm.More = true
+			}
+			a.resolveReplies(ctx, r.ID, in, 3)
+			cm.Messages = in
+			blocks[i] = cm
+		}(i, r)
 	}
 	wg.Wait()
 
 	res := &model.RecentResult{Since: since, Now: now.UnixMilli(), Network: net}
+	for _, b := range blocks {
+		if b != nil {
+			res.Chats = append(res.Chats, *b)
+		}
+	}
 	type ref struct{ chat, msg int }
 	var all []ref
-	for _, r := range selected {
-		msgs := a.convert(ctx, r.ID, r.Events, 3)
-		var in []model.Message
-		for _, m := range msgs {
-			if m.TS >= since {
-				in = append(in, m)
-			}
-		}
-		if len(in) == 0 {
-			continue
-		}
-		cm := model.ChatMessages{Chat: r.Chat, Count: len(in)}
-		cm.AtLeast = r.Limited && oldestTS(r.Events) >= since // window not fully covered
-		cm.More = cm.AtLeast
-		if len(in) > perChat {
-			in = in[len(in)-perChat:]
-			cm.More = true
-		}
-		cm.Messages = in
-		res.Chats = append(res.Chats, cm)
-	}
 	for ci, c := range res.Chats {
 		for mi := range c.Messages {
 			all = append(all, ref{ci, mi})
