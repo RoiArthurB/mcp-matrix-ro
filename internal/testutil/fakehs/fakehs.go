@@ -5,6 +5,7 @@ package fakehs
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -24,6 +25,12 @@ type Server struct {
 	// ValidToken is the token accepted (defaults to Token); /login returns it.
 	ValidToken string
 	Logins     int
+	// DeviceTokens makes /login behave like a real homeserver: each login
+	// returns a new token, and a login on an existing device invalidates the
+	// token that device had. ValidToken stays accepted.
+	DeviceTokens bool
+
+	devTokens map[string]string // device ID -> its current token
 
 	mu       sync.Mutex
 	requests []string
@@ -112,9 +119,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	valid := s.ValidToken
+	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	ok := got == s.ValidToken
+	for _, t := range s.devTokens {
+		ok = ok || got == t
+	}
 	s.mu.Unlock()
-	if r.Header.Get("Authorization") != "Bearer "+valid && r.URL.Path != "/_matrix/client/versions" {
+	if !ok && r.URL.Path != "/_matrix/client/versions" {
 		errJSON(w, 401, "M_UNKNOWN_TOKEN")
 		return
 	}
@@ -242,14 +253,21 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 403, "M_FORBIDDEN")
 		return
 	}
-	s.mu.Lock()
-	s.Logins++
-	tok := s.ValidToken
-	s.mu.Unlock()
 	dev := req.DeviceID
 	if dev == "" {
 		dev = "NEWDEVICE"
 	}
+	s.mu.Lock()
+	s.Logins++
+	tok := s.ValidToken
+	if s.DeviceTokens {
+		if s.devTokens == nil {
+			s.devTokens = map[string]string{}
+		}
+		tok = fmt.Sprintf("tok-%d", s.Logins)
+		s.devTokens[dev] = tok
+	}
+	s.mu.Unlock()
 	_ = json.NewEncoder(w).Encode(map[string]string{"access_token": tok, "device_id": dev, "user_id": "@archive:dom"})
 }
 

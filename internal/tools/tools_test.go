@@ -127,3 +127,16 @@ func TestCallRecentAndErrors(t *testing.T) {
 		t.Fatalf("allowlist violations: %v", v)
 	}
 }
+
+func TestRejectedTokenErrorTellsWhatToFix(t *testing.T) {
+	cs, hs := connect(t)
+	hs.Rotate("someone-else")
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "chats", Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	txt := res.Content[0].(*mcp.TextContent).Text
+	if !res.IsError || !strings.Contains(txt, "Matrix login failed") || !strings.Contains(txt, "MATRIX_PASSWORD") || strings.Contains(txt, fakehs.Token) {
+		t.Fatalf("want a token-rejected error with a fix, got %q", txt)
+	}
+}

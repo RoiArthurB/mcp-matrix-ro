@@ -25,10 +25,13 @@ type Network struct {
 
 // Config is the resolved configuration.
 type Config struct {
-	Homeserver  string
-	Token       string
-	User        string // password login, used when no token is configured
-	Password    string
+	Homeserver string
+	Token      string
+	User       string // password login; with a token, only a fallback when the token is rejected
+	Password   string
+	// PasswordErr is why the password fallback is unavailable although a
+	// token is set (e.g. an unreadable MATRIX_PASSWORD_FILE). Never fatal.
+	PasswordErr error
 	TZ          *time.Location
 	Me          []string // empty = whoami user only
 	Networks    []Network
@@ -123,19 +126,25 @@ func (r Raw) Resolve() (*Config, error) {
 	} else if c.Token, err = cleanToken(r.Token, "MATRIX_ACCESS_TOKEN"); err != nil {
 		return nil, err
 	}
-	// Password settings are only read when no token is configured, so a
-	// leftover MATRIX_PASSWORD_FILE (missing secret, unreadable file) cannot
-	// break a token setup.
-	if c.Token == "" {
-		c.User = strings.TrimSpace(r.User)
-		c.Password = r.Password
-		if r.PasswordFile != "" {
-			b, err := os.ReadFile(r.PasswordFile)
-			if err != nil {
-				return nil, fmt.Errorf("reading MATRIX_PASSWORD_FILE: %w", err)
-			}
+	// With a token, the password settings are only a fallback for when the
+	// homeserver rejects the token, so a leftover MATRIX_PASSWORD_FILE (missing
+	// secret, unreadable file) cannot break a token setup: the error is kept
+	// in PasswordErr and the fallback is disabled.
+	c.User = strings.TrimSpace(r.User)
+	c.Password = r.Password
+	if r.PasswordFile != "" {
+		b, err := os.ReadFile(r.PasswordFile)
+		switch {
+		case err != nil && c.Token == "":
+			return nil, fmt.Errorf("reading MATRIX_PASSWORD_FILE: %w", err)
+		case err != nil:
+			c.Password, c.PasswordErr = "", fmt.Errorf("reading MATRIX_PASSWORD_FILE: %w", err)
+		default:
 			c.Password = strings.TrimRight(decodeText(b), "\r\n")
 		}
+	}
+	if c.Token != "" && (c.User == "" || c.Password == "") {
+		c.User, c.Password = "", ""
 	}
 	switch {
 	case c.Token != "": // a configured token always wins

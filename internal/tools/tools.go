@@ -145,7 +145,12 @@ func errorText(err error) string {
 	case app.IsUserError(err):
 		return err.Error()
 	case matrix.IsAuth(err):
-		return "Matrix login failed (access token rejected). Tell the user to check MATRIX_ACCESS_TOKEN or MATRIX_USER/MATRIX_PASSWORD."
+		hint := "the homeserver rejected the login"
+		var ae *matrix.AuthError
+		if errors.As(err, &ae) {
+			hint = ae.Hint()
+		}
+		return "Matrix login failed: " + hint + ". This is a server configuration problem the user must fix; retrying will not help."
 	case errors.Is(err, context.DeadlineExceeded):
 		return "Matrix server timed out. Try again later or narrow the request."
 	default:

@@ -205,11 +205,11 @@ func TestPasswordLoginCLI(t *testing.T) {
 	defer hs.Close()
 	base := []string{"PATH=" + os.Getenv("PATH"), "MATRIX_HOMESERVER=" + hs.URL, "MATRIX_USER=archive", "MCP_MATRIX_RO_STATE_DIR=" + t.TempDir()}
 	out, errOut, code := runCmd(t, append(base, "MATRIX_PASSWORD="+fakehs.Password), "check")
-	if code != 0 || !strings.Contains(out, "Logged in as: @archive:dom") {
+	if code != 0 || !strings.Contains(out, "Logged in as: @archive:dom") || !strings.Contains(out, "Login:        password (user archive)") {
 		t.Fatalf("exit %d: %s %s", code, out, errOut)
 	}
 	_, errOut, code = runCmd(t, append(base[:3], "MCP_MATRIX_RO_STATE_DIR="+t.TempDir(), "MATRIX_PASSWORD=nope"), "check")
-	if code != exitAuth || strings.Contains(errOut, "nope") {
+	if code != exitAuth || strings.Contains(errOut, "nope") || !strings.Contains(errOut, "refused the password login") {
 		t.Fatalf("wrong password: exit %d, stderr %q", code, errOut)
 	}
 	noViolations(t, hs)
