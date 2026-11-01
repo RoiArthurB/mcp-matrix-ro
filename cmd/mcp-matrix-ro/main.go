@@ -14,7 +14,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/RoiArthurB/mcp-matrix-ro/internal/app"
 	"github.com/RoiArthurB/mcp-matrix-ro/internal/config"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/fsutil"
 	"github.com/RoiArthurB/mcp-matrix-ro/internal/matrix"
 	"github.com/RoiArthurB/mcp-matrix-ro/internal/model"
 	"github.com/RoiArthurB/mcp-matrix-ro/internal/render"
@@ -155,31 +155,25 @@ func serve(ctx context.Context, a *app.App, log *slog.Logger, stderr io.Writer, 
 // failure maps an error to a clear stderr message and an exit code.
 func failure(stderr io.Writer, what string, err error) int {
 	var nerr net.Error
-	var uerr *app.UserError
+	var ae *matrix.AuthError
+	var me *matrix.Error
 	switch {
-	case matrix.IsAuth(err):
-		var ae *matrix.AuthError
-		if errors.As(err, &ae) {
-			fmt.Fprintf(stderr, "mcp-matrix-ro: %s: authentication failed: %v\n", what, err)
-		} else {
-			fmt.Fprintf(stderr, "mcp-matrix-ro: %s: authentication failed: the access token or password was rejected (%v)\n", what, err)
-		}
+	case errors.As(err, &ae):
+		fmt.Fprintf(stderr, "mcp-matrix-ro: %s: authentication failed: %v\n", what, err)
 		return exitAuth
-	case errors.As(err, &uerr):
-		fmt.Fprintf(stderr, "mcp-matrix-ro: %s: %v\n", what, err)
-		return exitUsage
+	case matrix.IsAuth(err):
+		fmt.Fprintf(stderr, "mcp-matrix-ro: %s: authentication failed: the access token or password was rejected (%v)\n", what, err)
+		return exitAuth
 	case app.IsUserError(err):
 		fmt.Fprintf(stderr, "mcp-matrix-ro: %s: %v\n", what, err)
 		return exitUsage
 	case errors.As(err, &nerr), errors.Is(err, context.DeadlineExceeded):
 		fmt.Fprintf(stderr, "mcp-matrix-ro: %s: cannot reach the homeserver: %v\n", what, err)
 		return exitNetwork
+	case errors.As(err, &me):
+		fmt.Fprintf(stderr, "mcp-matrix-ro: %s: homeserver error: %v\n", what, err)
+		return exitNetwork
 	default:
-		var me *matrix.Error
-		if errors.As(err, &me) {
-			fmt.Fprintf(stderr, "mcp-matrix-ro: %s: homeserver error: %v\n", what, err)
-			return exitNetwork
-		}
 		fmt.Fprintf(stderr, "mcp-matrix-ro: %s: %v\n", what, err)
 		return exitFail
 	}
@@ -263,14 +257,7 @@ func readCursorFile(path string) (int64, error) {
 }
 
 func writeCursorFile(path string, t time.Time) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(t.UTC().Format(time.RFC3339Nano)+"\n"), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsutil.WriteFileAtomic(path, []byte(t.UTC().Format(time.RFC3339Nano)+"\n"))
 }
 
 // ---- check ----

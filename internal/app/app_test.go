@@ -146,8 +146,8 @@ func TestBridgedDMRosterFetchedOnce(t *testing.T) {
 	if n := hs.Count("/joined_members"); n != 1 || hs.Count("/rooms/%21bap-wa:dom/joined_members") != 1 {
 		t.Errorf("want 1 joined_members call for !bap-wa:dom, got %v", hs.Requests())
 	}
-	e, ok := a.Res.Room(ctx, "!bap-wa:dom")
-	if !ok || !e.DM || e.Network != "whatsapp" {
+	e, err := a.Res.Find(ctx, "!bap-wa:dom")
+	if err != nil || !e.DM || e.Network != "whatsapp" {
 		t.Errorf("bridged DM after cached roster: %+v", e)
 	}
 }
@@ -255,5 +255,27 @@ func TestCheck(t *testing.T) {
 	r, _ = a2.Check(context.Background())
 	if !strings.HasPrefix(r.Search, "not supported") {
 		t.Fatalf("want unsupported, got %s", r.Search)
+	}
+}
+
+// Concurrent callers (HTTP mode) share one index rebuild instead of each
+// running their own /sync.
+func TestConcurrentChatsSyncOnce(t *testing.T) {
+	a, hs := setup(t)
+	ctx := context.Background()
+	errs := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		go func() {
+			_, err := a.Chats(ctx, app.ChatsParams{})
+			errs <- err
+		}()
+	}
+	for i := 0; i < 8; i++ {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := hs.Count("/sync"); n != 1 {
+		t.Errorf("want 1 /sync for 8 concurrent chats calls, got %d", n)
 	}
 }

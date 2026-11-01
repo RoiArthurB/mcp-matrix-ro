@@ -1,53 +1,60 @@
-# Example Docker Compose setup for mcp-matrix-ro.
+# Example Docker Compose setup for mcp-matrix-ro: password login, state in
+# ./state, and a long-lived Streamable HTTP server for the MCP client.
 #
 # 1. cp docker-compose.example.yml docker-compose.yml
-#    cp .env.example .env            # then edit it
-#    printf '%s' 'syt_your_token' > matrix_token.txt && chmod 600 matrix_token.txt
-#    openssl rand -hex 32 | tr -d '\n' > mcp_http_token.txt && chmod 600 mcp_http_token.txt
-# 2. docker compose run --rm mcp-matrix-ro check
+#    cp .env.example .env                  # then edit it (homeserver, user, your IDs)
+#    printf '%s' 'your-matrix-password' > matrix_password.txt
+#    openssl rand -hex 32 | tr -d '\n' > mcp_http_token.txt
+#    chmod 600 matrix_password.txt mcp_http_token.txt
+#    mkdir -p state                        # owned by you: the container runs as PUID:PGID
+# 2. docker compose run --rm mcp-matrix-ro-http check
+# 3. docker compose up -d mcp-matrix-ro-http
+#    MCP endpoint: http://127.0.0.1:8080/mcp   (Authorization: Bearer <mcp_http_token.txt>)
 #
-# Background HTTP server (recommended): one long-lived container, each MCP
-# request is answered directly with warm caches.
-#   docker compose up -d mcp-matrix-ro-http
-#   MCP endpoint: http://127.0.0.1:8080/mcp   (Authorization: Bearer <mcp_http_token.txt>)
-#
-# MCP over stdio instead: the MCP client starts a container for each session, e.g. in ZeroClaw:
+# MCP over stdio instead (the client starts a container per session), e.g. in ZeroClaw:
 #   command = "docker"
 #   args = ["compose", "-f", "/opt/mcp-matrix-ro/docker-compose.yml", "run", "--rm", "-T", "mcp-matrix-ro", "serve"]
 #
 # Nightly digest (host cron):
 #   30 6 * * * cd /opt/mcp-matrix-ro && docker compose run --rm -T digest >> /var/lib/brief/chat.md
+#
+# Access token instead of a password: put the bare token in matrix_token.txt,
+# replace matrix_password with matrix_token below (secret and environment:
+# MATRIX_ACCESS_TOKEN_FILE: /run/secrets/matrix_token) and drop MATRIX_USER
+# from .env. Keeping both makes the password a fallback for a rejected token.
+
+x-env: &env
+  MATRIX_PASSWORD_FILE: /run/secrets/matrix_password
+  MCP_MATRIX_RO_STATE_DIR: /state
 
 x-common: &common
   image: ghcr.io/roiarthurb/mcp-matrix-ro:latest
   env_file: .env
-  environment:
-    MATRIX_ACCESS_TOKEN_FILE: /run/secrets/matrix_token
-    MCP_MATRIX_RO_STATE_DIR: /state
-  secrets:
-    - matrix_token
+  environment: *env
+  secrets: [matrix_password]
+  # The session (password login) and the name cache live in ./state, so it
+  # must be writable by this user: use the owner of ./state (`id -u`, `id -g`).
+  user: "${PUID:-1000}:${PGID:-1000}"
   volumes:
-    - state:/state
-    # Or a bind mount owned by uid 65532: - ./state:/state
+    - ./state:/state
   read_only: true
   cap_drop: [ALL]
   security_opt:
     - no-new-privileges:true
 
 services:
-  # Long-lived Streamable HTTP server.
+  # Long-lived Streamable HTTP server (recommended).
   mcp-matrix-ro-http:
     <<: *common
     restart: unless-stopped
     environment:
-      MATRIX_ACCESS_TOKEN_FILE: /run/secrets/matrix_token
-      MCP_MATRIX_RO_STATE_DIR: /state
+      <<: *env
       MCP_MATRIX_RO_HTTP_TOKEN_FILE: /run/secrets/mcp_http_token
-    secrets:
-      - matrix_token
-      - mcp_http_token
+    secrets: [matrix_password, mcp_http_token]
     # 0.0.0.0 inside the container is required for Docker's port forwarding;
-    # the port is published on the host's loopback only.
+    # the port is published on the host's loopback only. If the MCP client
+    # runs in another container, put both on one network and use
+    # http://mcp-matrix-ro-http:8080/mcp instead of publishing the port.
     command: ["serve", "--http", "0.0.0.0:8080"]
     ports:
       - "127.0.0.1:8080:8080"
@@ -65,10 +72,7 @@ services:
     command: ["digest", "--since", "24h", "--format", "md", "--cursor-file", "/state/digest.cursor"]
 
 secrets:
-  matrix_token:
-    file: ./matrix_token.txt
+  matrix_password:
+    file: ./matrix_password.txt
   mcp_http_token:
     file: ./mcp_http_token.txt
-
-volumes:
-  state:

@@ -109,6 +109,7 @@ mcp-matrix-ro serve --http 127.0.0.1:8080      # endpoint: http://127.0.0.1:8080
 - It speaks MCP Streamable HTTP on `/mcp` (stateless, JSON responses), so a restart never invalidates a client session.
 - Every request must carry `Authorization: Bearer <token>`; the server refuses to start without a token. `GET /healthz` answers `ok` without auth and reveals nothing else.
 - It binds to `127.0.0.1` unless you name another host, and logs a warning when it is not on loopback. Matrix traffic still goes through the same allowlisted, read-only client.
+- Concurrent requests share one client, one login and one room index: when the index is stale, a single `/sync` rebuilds it while the other requests wait for it. The name cache is written to the state dir after each tool call, atomically.
 
 ZeroClaw:
 
@@ -136,20 +137,23 @@ curl -s http://127.0.0.1:8080/mcp \
 
 The image is distroless, runs as non-root, and keeps its cache in the `/state` volume. It can run as a background HTTP server (`mcp-matrix-ro-http` service, recommended) or over stdio, where the MCP client starts a container for each session.
 
-[`docker-compose.example.yml`](docker-compose.example.yml) is a ready-to-use setup. It passes the token as a Docker secret, uses a read-only root filesystem, drops all capabilities, and includes a `digest` service for cron.
+[`docker-compose.example.yml`](docker-compose.example.yml) is a ready-to-use setup with password login. It passes the password and the HTTP bearer token as Docker secrets, keeps the state in `./state`, runs as your own user, uses a read-only root filesystem, drops all capabilities, and includes a `digest` service for cron.
 
 ```sh
 cp docker-compose.example.yml docker-compose.yml
-cp .env.example .env                       # set MATRIX_HOMESERVER and MCP_MATRIX_RO_ME
-printf '%s' 'syt_…' > matrix_token.txt && chmod 600 matrix_token.txt
-openssl rand -hex 32 | tr -d '\n' > mcp_http_token.txt && chmod 600 mcp_http_token.txt
-docker compose run --rm mcp-matrix-ro check
-docker compose up -d mcp-matrix-ro-http   # background server on http://127.0.0.1:8080/mcp
+cp .env.example .env                       # set MATRIX_HOMESERVER, MATRIX_USER, MCP_MATRIX_RO_ME, PUID/PGID
+printf '%s' 'your-matrix-password' > matrix_password.txt
+openssl rand -hex 32 | tr -d '\n' > mcp_http_token.txt
+chmod 600 matrix_password.txt mcp_http_token.txt
+mkdir -p state
+docker compose run --rm mcp-matrix-ro-http check
+docker compose up -d mcp-matrix-ro-http    # background server on http://127.0.0.1:8080/mcp
 ```
 
-The HTTP service listens on `0.0.0.0:8080` inside the container (Docker's port forwarding needs that) and publishes the port on the host's `127.0.0.1` only. Point the client at `http://127.0.0.1:8080/mcp` with the token from `mcp_http_token.txt` (see [HTTP mode](#http-mode-background-server)). If the client runs in another container, put both on the same Docker network and use `http://mcp-matrix-ro-http:8080/mcp` instead of publishing the port.
-
-To use a password instead, remove the `matrix_token` secret and `MATRIX_ACCESS_TOKEN_FILE` (otherwise the token is tried first and the password is only a fallback), and set `MATRIX_USER` and `MATRIX_PASSWORD_FILE` (or `MATRIX_PASSWORD`) in `.env`. With password login, keep `/state` persistent (named volume, or a `./state` bind mount owned by uid 65532) so the session is reused across restarts.
+- **User and state:** the containers run as `PUID:PGID` from `.env` (default `1000:1000`). Set them to the owner of `./state` and of the secret files (`id -u`, `id -g`), otherwise the session can't be saved or the password file can't be read. The state dir must persist: with password login it holds the session, so restarts reuse the same device instead of logging in again.
+- **Password:** keep it in `matrix_password.txt`, not in `.env`. Compose expands `$` in `.env` values, which silently mangles passwords that contain one.
+- **HTTP:** the service listens on `0.0.0.0:8080` inside the container (Docker's port forwarding needs that) and publishes the port on the host's `127.0.0.1` only. Point the client at `http://127.0.0.1:8080/mcp` with the token from `mcp_http_token.txt` (see [HTTP mode](#http-mode-background-server)). If the client runs in another container, put both on the same Docker network and use `http://mcp-matrix-ro-http:8080/mcp` instead of publishing the port.
+- **Access token instead:** put the bare token in `matrix_token.txt`, swap the `matrix_password` secret for a `matrix_token` secret with `MATRIX_ACCESS_TOKEN_FILE: /run/secrets/matrix_token`, and remove `MATRIX_USER` from `.env`. If you keep both, the token is tried first and the password is only a fallback.
 
 ZeroClaw with Docker over stdio:
 
@@ -235,6 +239,7 @@ Example cron entry:
 cmd/mcp-matrix-ro/     subcommands: serve (stdio or HTTP), digest, check, version (+ stdio and HTTP smoke tests)
 internal/matrix/       allowlisted client, endpoints, types, read-only tests
 internal/session/      token or password login, cached session
+internal/fsutil/       atomic state-file writes
 internal/resolve/      room index, names, network tagging, DM detection, chat lookup, cache
 internal/render/       event -> message conversion, text rendering
 internal/app/          operations shared by MCP tools and the CLI
