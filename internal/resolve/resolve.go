@@ -229,15 +229,22 @@ func (r *Resolver) Sync(ctx context.Context, timelineLimit int) ([]*RoomData, er
 		return nil, err
 	}
 	out := make([]*RoomData, 0, len(resp.Rooms.Join))
-	var missing [][2]string
+	var partial []*RoomEntry
 	for id, jr := range resp.Rooms.Join {
 		r.LearnMembers(id, jr.State.Events)
 		prev, _ := r.cache.room(id)
 		e := r.classify(id, jr, prev)
 		out = append(out, &RoomData{RoomEntry: e, Events: jr.Timeline.Events, Limited: jr.Timeline.Limited, PrevBatch: jr.Timeline.PrevBatch})
-		if e.DM && !e.Hidden && e.Name == "" {
-			for _, o := range e.Others {
-				missing = append(missing, [2]string{id, o})
+		if e.partial && e.Joined <= maxRosterSize && !e.Space {
+			partial = append(partial, e)
+		}
+	}
+	r.fetchRosters(ctx, partial)
+	var missing [][2]string
+	for _, d := range out {
+		if d.DM && !d.Hidden && d.Name == "" {
+			for _, o := range d.Others {
+				missing = append(missing, [2]string{d.ID, o})
 			}
 		}
 	}
@@ -254,8 +261,72 @@ func (r *Resolver) Sync(ctx context.Context, timelineLimit int) ([]*RoomData, er
 	return out, nil
 }
 
-// classify builds a RoomEntry from sync data. Name may be left empty for DMs
-// (filled by finishName once member names are known).
+// maxRosterSize is the largest room whose full member list is fetched when
+// /sync left members out. Bridged DMs are small (me, my puppet, the contact,
+// the bridge bot); bigger rooms are groups whatever the unknown members are.
+const maxRosterSize = 6
+
+// maxRosterFetches bounds /joined_members calls per sync; rosters are cached,
+// so later syncs only fetch rooms that are new or changed size.
+const maxRosterFetches = 40
+
+// fetchRosters loads the full member list of rooms /sync described only
+// partially (Synapse sends no heroes for named rooms, and lazy loading only
+// includes recent senders), so bots and the owner's IDs are not mistaken for
+// people. Failures keep the partial classification.
+func (r *Resolver) fetchRosters(ctx context.Context, rooms []*RoomEntry) {
+	if len(rooms) > maxRosterFetches {
+		sort.Slice(rooms, func(i, j int) bool { return rooms[i].LastTS > rooms[j].LastTS })
+		rooms = rooms[:maxRosterFetches]
+	}
+	sem := make(chan struct{}, 8)
+	var wg sync.WaitGroup
+	for _, e := range rooms {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(e *RoomEntry) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			jm, err := r.mc.JoinedMembers(ctx, e.ID)
+			if err != nil {
+				r.log.Debug("joined_members failed", "room", e.ID, "err", err)
+				return
+			}
+			ids := make([]string, 0, len(jm.Joined))
+			for id, m := range jm.Joined {
+				ids = append(ids, id)
+				if m.DisplayName != "" {
+					r.cache.setMemberName(e.ID, id, m.DisplayName)
+				}
+			}
+			r.applyRoster(e, ids)
+		}(e)
+	}
+	wg.Wait()
+}
+
+// SetRoster reclassifies a room from its complete list of joined member IDs
+// (e.g. from its full state) and stores the result in the index.
+func (r *Resolver) SetRoster(e *RoomEntry, joined []string) {
+	r.applyRoster(e, joined)
+	r.applyNameExclude(e)
+	r.cache.putRooms([]*RoomEntry{e}, false)
+}
+
+func (r *Resolver) applyRoster(e *RoomEntry, joined []string) {
+	ids := append([]string(nil), joined...)
+	sort.Strings(ids)
+	e.Roster, e.RosterCount = ids, len(ids)
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	r.applyMembers(e, set, len(ids), true)
+}
+
+// classify builds a RoomEntry from sync data. Name is left empty when the
+// room has no name or alias (filled by finishName once member names are
+// known).
 func (r *Resolver) classify(id string, jr matrix.JoinedRoom, prev *RoomEntry) *RoomEntry {
 	e := &RoomEntry{Chat: model.Chat{ID: id}}
 	var name, alias string
@@ -305,20 +376,64 @@ func (r *Resolver) classify(id string, jr matrix.JoinedRoom, prev *RoomEntry) *R
 		last = created
 	}
 	e.LastTS = last
+	if prev != nil && prev.Network != "" && prev.Network != "matrix" {
+		e.Network = prev.Network // a room's network does not change
+	}
 
-	var others, humans, bots []string
-	network := ""
-	ids := make([]string, 0, len(members))
-	for m := range members {
+	joined := 0
+	if jr.Summary.JoinedMemberCount != nil {
+		joined = *jr.Summary.JoinedMemberCount
+	} else if prev != nil {
+		joined = prev.Joined
+	}
+	if r.whoami != "" {
+		members[r.whoami] = true // the syncing account is always joined
+	}
+	if joined == 0 {
+		joined = len(members)
+	}
+	if prev != nil && len(prev.Roster) > 0 && prev.RosterCount == joined {
+		// Same size as when the full list was fetched: reuse it.
+		for _, m := range prev.Roster {
+			members[m] = true
+		}
+		if len(members) == joined {
+			e.Roster, e.RosterCount = prev.Roster, prev.RosterCount
+		}
+	}
+	r.applyMembers(e, members, joined, len(members) >= joined)
+
+	switch {
+	case name != "":
+		e.Name = name
+	case alias != "":
+		e.Name = alias
+	}
+	return e
+}
+
+// applyMembers sets Network, Others, DM, Members, Hidden and the partial
+// flag from the member IDs known for a room. joined is the server's joined
+// member count; when complete is false some joined members are unknown.
+func (r *Resolver) applyMembers(e *RoomEntry, known map[string]bool, joined int, complete bool) {
+	ids := make([]string, 0, len(known))
+	for m := range known {
 		ids = append(ids, m)
 	}
 	sort.Strings(ids)
+	var others, humans, bots []string
+	meCount := 0
+	network, meNetwork := "", ""
 	for _, m := range ids {
+		if r.IsMe(m) {
+			meCount++
+			if meNetwork == "" {
+				meNetwork = r.Network(m)
+			}
+			continue
+		}
 		if network == "" {
 			network = r.Network(m)
-		}
-		if r.IsMe(m) {
-			continue
 		}
 		others = append(others, m)
 		if r.isBot(m) {
@@ -327,55 +442,41 @@ func (r *Resolver) classify(id string, jr matrix.JoinedRoom, prev *RoomEntry) *R
 			humans = append(humans, m)
 		}
 	}
-	if network == "" {
+	switch {
+	case network != "":
+	case meNetwork != "":
+		network = meNetwork
+	case e.Network != "":
+		network = e.Network
+	default:
 		network = "matrix"
 	}
 	e.Network = network
 	e.Others = others
+	if meCount == 0 {
+		meCount = 1
+	}
 
-	joined := 0
-	if jr.Summary.JoinedMemberCount != nil {
-		joined = *jr.Summary.JoinedMemberCount
-	} else if prev != nil {
-		joined = prev.Members
+	unknown := 0
+	if !complete && joined > len(known) {
+		unknown = joined - len(known)
 	}
-	if joined == 0 {
-		joined = len(members)
-		if !members[r.whoami] {
-			joined++
-		}
+	e.partial, e.Joined = unknown > 0, joined
+	if unknown > 0 && network != "matrix" && len(bots) == 0 {
+		// Bridged rooms always hold the bridge bot: when the member list
+		// is incomplete, count one unknown member as that bot.
+		unknown--
 	}
-	e.Members = joined
-	meMembers := 0
-	for _, m := range ids {
-		if r.IsMe(m) {
-			meMembers++
-		}
+	// DM: exactly one other person, and no unknown members left.
+	e.DM = len(humans) == 1 && unknown == 0
+	// Members counts people: bridge bots are left out and the owner's
+	// accounts (Matrix user, bridge puppets) count once.
+	people := len(humans) + unknown + 1
+	if joined < people {
+		people = joined
 	}
-	if !members[r.whoami] {
-		meMembers++ // the syncing account itself is always joined
-	}
-	// DM: exactly one other human, and no unknown members beyond the known
-	// bots and owner IDs.
-	e.DM = len(humans) == 1 && joined <= meMembers+len(bots)+1
-	e.Hidden = e.Space || (len(humans) == 0 && len(bots) > 0) || r.cfg.ExcludeIDs[id]
-
-	switch {
-	case name != "":
-		e.Name = name
-	case alias != "":
-		e.Name = alias
-	case e.DM:
-		e.Name = "" // filled by finishName
-	case len(humans) > 0:
-		e.Name = "" // group without a name: heroes, filled by finishName
-	default:
-		e.Name = id
-	}
-	if e.Name != "" {
-		r.applyNameExclude(e)
-	}
-	return e
+	e.Members = people
+	e.Hidden = e.Space || (len(humans) == 0 && len(bots) > 0 && unknown == 0) || r.cfg.ExcludeIDs[e.ID]
 }
 
 func (r *Resolver) applyNameExclude(e *RoomEntry) {
@@ -387,8 +488,9 @@ func (r *Resolver) applyNameExclude(e *RoomEntry) {
 }
 
 // finishName names DMs after their other member and unnamed groups after
-// up to three members.
+// up to three members, then applies the name exclusions.
 func (r *Resolver) finishName(e *RoomEntry) {
+	defer r.applyNameExclude(e)
 	if e.Name != "" {
 		return
 	}
@@ -408,7 +510,6 @@ func (r *Resolver) finishName(e *RoomEntry) {
 	default:
 		e.Name = fmt.Sprintf("%s and %d others", strings.Join(names[:3], ", "), len(names)-3)
 	}
-	r.applyNameExclude(e)
 }
 
 // Index returns all joined rooms (including hidden ones), sorted by last

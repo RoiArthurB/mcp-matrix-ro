@@ -659,6 +659,53 @@
      ],
      "limited": false
     }
+   },
+   "!bap-wa:dom": {
+    "summary": {
+     "m.joined_member_count": 3,
+     "m.invited_member_count": 0
+    },
+    "state": {
+     "events": [
+      {
+       "type": "m.room.name",
+       "state_key": "",
+       "sender": "@whatsappbot:dom",
+       "event_id": "$e075",
+       "origin_server_ts": 1790787600000,
+       "content": {
+        "name": "Baptiste (WA)"
+       }
+      },
+      {
+       "type": "m.room.member",
+       "state_key": "@archive:dom",
+       "sender": "@archive:dom",
+       "event_id": "$e076",
+       "origin_server_ts": 1790787600000,
+       "content": {
+        "membership": "join"
+       }
+      }
+     ]
+    },
+    "timeline": {
+     "events": [
+      {
+       "type": "m.room.message",
+       "sender": "@archive:dom",
+       "event_id": "$e074",
+       "origin_server_ts": 1793280780000,
+       "content": {
+        "msgtype": "m.text",
+        "body": "Oui, 10h au labo"
+       },
+       "unsigned": {}
+      }
+     ],
+     "limited": true,
+     "prev_batch": "bap-prev"
+    }
    }
   }
  }

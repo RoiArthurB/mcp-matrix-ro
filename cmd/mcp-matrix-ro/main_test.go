@@ -170,7 +170,7 @@ func TestCheck(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut)
 	}
-	for _, want := range []string{"Logged in as: @archive:dom", "Search:       supported", "Joined rooms: 7 (4 visible chats: 2 DMs, 2 groups; 3 hidden)", "WhatsApp"} {
+	for _, want := range []string{"Logged in as: @archive:dom", "Search:       supported", "Joined rooms: 8 (5 visible chats: 3 DMs, 2 groups; 3 hidden)", "WhatsApp"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("check output missing %q:\n%s", want, out)
 		}

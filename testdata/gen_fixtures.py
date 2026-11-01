@@ -105,6 +105,19 @@ messages["!dm-me:dom"]={"":{"start":"d0","end":"dm-prev","chunk":list(reversed(r
 messages["!old:dom"]={"":{"start":"o0","chunk":list(reversed(rooms["!old:dom"]["timeline"]["events"]))}}
 messages[E]={"":{"start":"l0","chunk":list(reversed(rooms[E]["timeline"]["events"])),"state":[member(ALICE,"Alice")]}}
 
+# 8. Bridged WhatsApp DM as mautrix creates it: named room, so Synapse sends
+# no heroes, and lazy loading only includes the last sender (me). The full
+# member list (me, the contact's puppet, the bridge bot) comes from
+# /joined_members, served from state.
+BAP2="@whatsapp_84988888888:dom"; W="!bap-wa:dom"
+w_msgs=[msg(BAP2, ts(29,20,30), "On se voit demain ?"), msg(ME, ts(29,20,33), "Oui, 10h au labo")]
+rooms[W]={"summary":{"m.joined_member_count":3,"m.invited_member_count":0},
+  "state":{"events":[st("m.room.name",{"name":"Baptiste (WA)"},sender=BOT), member(ME,None)]},
+  "timeline":{"events":w_msgs[-1:],"limited":True,"prev_batch":"bap-prev"}}
+state[W]=[st("m.room.name",{"name":"Baptiste (WA)"},sender=BOT), st("m.room.topic",{"topic":"WhatsApp private chat"},sender=BOT),
+  st("m.room.create",{"room_version":"10"},sender=BOT,t=ts(29,17,30)), member(ME,None), member(BAP2,"Baptiste (WA)"), member(BOT,"WhatsApp bridge bot")]
+messages[W]={"":{"start":"w0","end":"bap-prev","chunk":list(reversed(w_msgs)),"state":[member(BAP2,"Baptiste (WA)")]},"bap-prev":{"start":"bap-prev","chunk":[]}}
+
 sync={"next_batch":"s1","rooms":{"join":rooms}}
 search={"search_categories":{"room_events":{"count":2,"results":[
   {"rank":1,"result":dict(meet, room_id=G),"context":{"events_before":[redacted],"events_after":[]}},

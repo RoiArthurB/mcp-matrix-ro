@@ -22,6 +22,13 @@ type RoomEntry struct {
 	Hidden bool     `json:"hidden,omitempty"`
 	Space  bool     `json:"space,omitempty"`
 	Others []string `json:"others,omitempty"` // non-me member IDs known (heroes etc.)
+	Joined int      `json:"joined,omitempty"` // server's joined member count
+	// Roster is the full joined member list, fetched for small rooms that
+	// /sync described only partially; RosterCount is the joined count then.
+	Roster      []string `json:"roster,omitempty"`
+	RosterCount int      `json:"roster_n,omitempty"`
+
+	partial bool // some joined members are unknown
 }
 
 type nameEntry struct {

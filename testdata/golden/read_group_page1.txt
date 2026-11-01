@@ -4,4 +4,4 @@ Sat 31 Oct 10:00 Baptiste: msg 11 about the ros2 bridge
 17:45 Linh: [deleted]
 17:50 Linh: Meeting moved to Monday 10:00, same room.
   Bring the demo laptop.
-Older messages: cursor=eyJyIjoiIXRhbmdvOmRvbSIsInMiOjQsImwiOjI0fQ
+More older messages exist. To read them, call read again with chat="!tango:dom" and cursor="eyJyIjoiIXRhbmdvOmRvbSIsInMiOjQsImwiOjI0fQ".

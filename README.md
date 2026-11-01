@@ -150,7 +150,8 @@ Sat 31 Oct 18:02 Mẹ: Con ăn cơm chưa?
 How it works:
 
 - **`recent`** makes one filtered `/sync` (`timeout=0`, `set_presence=offline`, lazy-loaded members, message events only). It only pages back with `/messages` for chats whose sync window ended before `since`.
-- **`read`** pages back through `/messages`. `before`/`after` bound the window and the newest messages in it are shown. The `cursor` continues to older messages.
+- **`chats`** counts people, not accounts: bridge bots are left out and your own IDs count once, and DMs show no count. For small rooms that `/sync` only partly describes (bridges name their DM rooms, so the server sends no member summary), it fetches `/joined_members` once and caches the list until the room changes size.
+- **`read`** pages back through `/messages`. `before`/`after` bound the window and the newest messages in it are shown. When older messages exist, the last line says to call `read` again with the same `chat` and the given `cursor`.
 - **`search`** uses the server's `/search` when available. On Conduit/Continuwuity-style servers that lack it (404 or `M_UNRECOGNIZED`), it falls back to scanning recent history: the 50 most recently active chats, 500 events each, 30 days by default, within a 25 s budget. The first output line says which mode was used.
 - Unknown extra tool arguments are ignored rather than rejected, so a small model doesn't waste a round trip.
 

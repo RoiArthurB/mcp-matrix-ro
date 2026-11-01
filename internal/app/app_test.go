@@ -100,6 +100,12 @@ func TestChats(t *testing.T) {
 			if !c.DM || c.Name != "Carol" || c.Network != "matrix" {
 				t.Errorf("bad matrix DM: %+v", c)
 			}
+		case "!bap-wa:dom":
+			// Named bridged DM: /sync shows only me; the member list
+			// (me, puppet, bridge bot) must make it a WhatsApp DM.
+			if !c.DM || c.Name != "Baptiste (WA)" || c.Network != "whatsapp" {
+				t.Errorf("bad bridged DM: %+v", c)
+			}
 		}
 	}
 	r, _ = a.Chats(context.Background(), app.ChatsParams{ActiveWithin: "3d", Network: "matrix"})
@@ -125,6 +131,36 @@ func TestIndexCachedAcrossProcesses(t *testing.T) {
 	}
 	if n := hs.Count("/whoami"); n != 1 {
 		t.Fatalf("want 1 whoami, got %d", n)
+	}
+}
+
+func TestBridgedDMRosterFetchedOnce(t *testing.T) {
+	a, hs := setup(t)
+	ctx := context.Background()
+	for i := 0; i < 2; i++ { // recent syncs every call
+		if _, err := a.Recent(ctx, app.RecentParams{Since: "3d"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Only the partially known small room is fetched, and only once.
+	if n := hs.Count("/joined_members"); n != 1 || hs.Count("/rooms/%21bap-wa:dom/joined_members") != 1 {
+		t.Errorf("want 1 joined_members call for !bap-wa:dom, got %v", hs.Requests())
+	}
+	e, ok := a.Res.Room(ctx, "!bap-wa:dom")
+	if !ok || !e.DM || e.Network != "whatsapp" {
+		t.Errorf("bridged DM after cached roster: %+v", e)
+	}
+}
+
+func TestBridgedDMChatInfo(t *testing.T) {
+	a, _ := setup(t)
+	r, err := a.ChatInfo(context.Background(), "Baptiste (WA)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "chat_info_bridged_dm", render.ChatInfo(r, clock(a)))
+	if !r.DM || r.Network != "whatsapp" || r.Members != 2 || r.JoinedTotal != 3 {
+		t.Errorf("chat_info: %+v", r)
 	}
 }
 
@@ -211,7 +247,7 @@ func TestCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.UserID != "@archive:dom" || r.Joined != 7 || r.Visible != 4 || r.Hidden != 3 || r.DMs != 2 || !strings.HasPrefix(r.Search, "supported") {
+	if r.UserID != "@archive:dom" || r.Joined != 8 || r.Visible != 5 || r.Hidden != 3 || r.DMs != 3 || !strings.HasPrefix(r.Search, "supported") {
 		b, _ := json.Marshal(r)
 		t.Fatalf("unexpected check: %s", b)
 	}
