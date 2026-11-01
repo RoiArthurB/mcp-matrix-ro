@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -78,5 +79,88 @@ func TestPasswordLogin(t *testing.T) {
 	}
 	if _, err := FromEnv(env(map[string]string{"MATRIX_HOMESERVER": "https://m", "MATRIX_USER": "a"})).Resolve(); err == nil {
 		t.Fatal("want error for user without password")
+	}
+}
+
+func tokenFrom(t *testing.T, content []byte) (string, error) {
+	t.Helper()
+	f := filepath.Join(t.TempDir(), "tok")
+	if err := os.WriteFile(f, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := FromEnv(env(map[string]string{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN_FILE": f})).Resolve()
+	if err != nil {
+		return "", err
+	}
+	return c.Token, nil
+}
+
+func TestTokenFileCleanup(t *testing.T) {
+	utf16le := []byte{0xFF, 0xFE}
+	for _, r := range "syt_abc\r\n" {
+		utf16le = append(utf16le, byte(r), 0)
+	}
+	for name, content := range map[string][]byte{
+		"LF":          []byte("syt_abc\n"),
+		"CRLF":        []byte("syt_abc\r\n"),
+		"spaces/tabs": []byte(" \tsyt_abc \t\n\n"),
+		"UTF-8 BOM":   []byte("\xEF\xBB\xBFsyt_abc\n"),
+		"UTF-16 LE":   utf16le,
+		"quoted":      []byte("\"syt_abc\"\n"),
+		"bearer":      []byte("Bearer syt_abc\n"),
+		"env style":   []byte("MATRIX_ACCESS_TOKEN=syt_abc\n"),
+	} {
+		got, err := tokenFrom(t, content)
+		if err != nil || got != "syt_abc" {
+			t.Errorf("%s: got %q, %v", name, got, err)
+		}
+	}
+}
+
+func TestTokenFileInvalid(t *testing.T) {
+	for name, tc := range map[string]struct {
+		content []byte
+		want    string
+	}{
+		"two lines":    {[]byte("syt_abc\nsyt_def\n"), "line break"},
+		"inner CR":     {[]byte("syt_a\rbc"), "line break"},
+		"inner space":  {[]byte("syt_a bc"), "space"},
+		"control char": {[]byte("syt_a\x01bc"), "control character"},
+		"NUL":          {[]byte("s\x00y\x00t\x00"), "NUL"},
+		"non-ASCII":    {[]byte("syt_é"), "non-ASCII"},
+	} {
+		_, err := tokenFrom(t, tc.content)
+		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "MATRIX_ACCESS_TOKEN_FILE") {
+			t.Errorf("%s: want error mentioning %q, got %v", name, tc.want, err)
+			continue
+		}
+		if strings.Contains(err.Error(), "syt_") {
+			t.Errorf("%s: error leaks the token: %v", name, err)
+		}
+	}
+	// The variable form is validated too.
+	if _, err := FromEnv(env(map[string]string{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "a\nb"})).Resolve(); err == nil || !strings.Contains(err.Error(), "MATRIX_ACCESS_TOKEN:") {
+		t.Errorf("env token: got %v", err)
+	}
+	// A bad variable is ignored when the file wins.
+	f := filepath.Join(t.TempDir(), "tok")
+	_ = os.WriteFile(f, []byte("good\n"), 0o600)
+	if c, err := FromEnv(env(map[string]string{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "a\nb", "MATRIX_ACCESS_TOKEN_FILE": f})).Resolve(); err != nil || c.Token != "good" {
+		t.Errorf("file should win: %v", err)
+	}
+}
+
+func TestTokenIgnoresPasswordSettings(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "tok")
+	_ = os.WriteFile(f, []byte("syt_abc\n"), 0o600)
+	c, err := FromEnv(env(map[string]string{
+		"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN_FILE": f,
+		"MATRIX_USER": "archive", "MATRIX_PASSWORD_FILE": "/run/secrets/does-not-exist",
+	})).Resolve()
+	if err != nil {
+		t.Fatalf("missing password file must not matter with a token: %v", err)
+	}
+	if c.Token != "syt_abc" || c.User != "" || c.Password != "" {
+		t.Fatalf("got %+v", c)
 	}
 }
