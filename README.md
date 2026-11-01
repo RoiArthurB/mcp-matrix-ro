@@ -37,12 +37,12 @@ The binaries are about 7 to 8 MB (`CGO_ENABLED=0`, `-trimpath`, `-s -w`).
 
 Configuration comes from environment variables. Flags with the same name override them (run `mcp-matrix-ro <cmd> -h`). The token and password are never flags, so they can't leak via `ps`.
 
-**Login:** use either an access token or a username and password. If both are set, the token wins. With a password, the first start logs in once and caches the token and device in `$MCP_MATRIX_RO_STATE_DIR/session.json` (mode 0600). Later starts reuse it, so ZeroClaw restarts don't create a new device each time. If the server rejects the cached token, it logs in again once on the same device.
+**Login:** use either an access token or a username and password. If both are set, the token wins and the password settings are ignored (a missing password file is not an error). With a password, the first start logs in once and caches the token and device in `$MCP_MATRIX_RO_STATE_DIR/session.json` (mode 0600). Later starts reuse it, so ZeroClaw restarts don't create a new device each time. If the server rejects the cached token, it logs in again once on the same device.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `MATRIX_HOMESERVER` | required | Base URL, e.g. `https://matrix.example.org` |
-| `MATRIX_ACCESS_TOKEN` / `MATRIX_ACCESS_TOKEN_FILE` | token or password | Token, or a file containing it (the file wins) |
+| `MATRIX_ACCESS_TOKEN` / `MATRIX_ACCESS_TOKEN_FILE` | token or password | Token, or a file containing it (the file wins). Surrounding whitespace, CRLF, a UTF-8 BOM or UTF-16 encoding, quotes and a `Bearer ` prefix are tolerated; anything else that is not the bare token (a second line, inner spaces) is rejected with an explanation |
 | `MATRIX_USER` | | User ID or localpart for password login (`archive` or `@archive:example.org`) |
 | `MATRIX_PASSWORD` / `MATRIX_PASSWORD_FILE` | | Password, or a file containing it (the file wins) |
 | `MCP_MATRIX_RO_TZ` | `Asia/Ho_Chi_Minh` | Display timezone |

@@ -2,6 +2,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // Network tags a room by a regex on sender/member IDs.
@@ -108,33 +111,40 @@ func (r Raw) Resolve() (*Config, error) {
 	if c.Homeserver == "" {
 		return nil, errors.New("MATRIX_HOMESERVER is required")
 	}
-	c.Token = strings.TrimSpace(r.Token)
-	if r.TokenFile != "" {
+	var err error
+	if r.TokenFile != "" { // the file wins over the variable
 		b, err := os.ReadFile(r.TokenFile)
 		if err != nil {
 			return nil, fmt.Errorf("reading MATRIX_ACCESS_TOKEN_FILE: %w", err)
 		}
-		c.Token = strings.TrimSpace(string(b))
-	}
-	c.User = strings.TrimSpace(r.User)
-	c.Password = r.Password
-	if r.PasswordFile != "" {
-		b, err := os.ReadFile(r.PasswordFile)
-		if err != nil {
-			return nil, fmt.Errorf("reading MATRIX_PASSWORD_FILE: %w", err)
+		if c.Token, err = cleanToken(decodeText(b), "MATRIX_ACCESS_TOKEN_FILE"); err != nil {
+			return nil, err
 		}
-		c.Password = strings.TrimRight(string(b), "\r\n")
+	} else if c.Token, err = cleanToken(r.Token, "MATRIX_ACCESS_TOKEN"); err != nil {
+		return nil, err
+	}
+	// Password settings are only read when no token is configured, so a
+	// leftover MATRIX_PASSWORD_FILE (missing secret, unreadable file) cannot
+	// break a token setup.
+	if c.Token == "" {
+		c.User = strings.TrimSpace(r.User)
+		c.Password = r.Password
+		if r.PasswordFile != "" {
+			b, err := os.ReadFile(r.PasswordFile)
+			if err != nil {
+				return nil, fmt.Errorf("reading MATRIX_PASSWORD_FILE: %w", err)
+			}
+			c.Password = strings.TrimRight(decodeText(b), "\r\n")
+		}
 	}
 	switch {
-	case c.Token != "":
-		c.User, c.Password = "", "" // a configured token always wins
+	case c.Token != "": // a configured token always wins
 	case c.User != "" && c.Password != "":
 	case c.User != "":
 		return nil, errors.New("MATRIX_USER is set but MATRIX_PASSWORD / MATRIX_PASSWORD_FILE is missing")
 	default:
 		return nil, errors.New("set MATRIX_ACCESS_TOKEN (or _FILE), or MATRIX_USER + MATRIX_PASSWORD (or _FILE)")
 	}
-	var err error
 	if c.TZ, err = time.LoadLocation(r.TZ); err != nil {
 		return nil, fmt.Errorf("MCP_MATRIX_RO_TZ: %w", err)
 	}
@@ -201,4 +211,63 @@ func splitList(s string) []string {
 		}
 	}
 	return out
+}
+
+// decodeText returns file contents as a string, dropping a UTF-8 byte order
+// mark and decoding UTF-16 files (as written by some Windows editors and
+// PowerShell's `>` redirection).
+func decodeText(b []byte) string {
+	switch {
+	case bytes.HasPrefix(b, []byte{0xEF, 0xBB, 0xBF}):
+		return string(b[3:])
+	case len(b) >= 2 && (b[0] == 0xFF && b[1] == 0xFE || b[0] == 0xFE && b[1] == 0xFF):
+		le := b[0] == 0xFF
+		b = b[2:]
+		u := make([]uint16, 0, len(b)/2)
+		for i := 0; i+1 < len(b); i += 2 {
+			if le {
+				u = append(u, uint16(b[i])|uint16(b[i+1])<<8)
+			} else {
+				u = append(u, uint16(b[i])<<8|uint16(b[i+1]))
+			}
+		}
+		return string(utf16.Decode(u))
+	}
+	return string(b)
+}
+
+// cleanToken trims surrounding whitespace (including CRLF line endings),
+// tolerates a pasted "Bearer " prefix or surrounding quotes, and rejects
+// anything that cannot be sent in an HTTP header. The token itself is never
+// included in the error.
+func cleanToken(s, source string) (string, error) {
+	s = strings.TrimSpace(strings.TrimPrefix(s, "\uFEFF"))
+	if len(s) >= 2 && (s[0] == '"' && s[len(s)-1] == '"' || s[0] == '\'' && s[len(s)-1] == '\'') {
+		s = strings.TrimSpace(s[1 : len(s)-1])
+	}
+	if len(s) > 7 && strings.EqualFold(s[:7], "bearer ") {
+		s = strings.TrimSpace(s[7:])
+	}
+	if k, v, ok := strings.Cut(s, "="); ok && k == "MATRIX_ACCESS_TOKEN" {
+		s = strings.TrimSpace(v)
+	}
+	for i, r := range s {
+		var what string
+		switch {
+		case r == '\n' || r == '\r':
+			what = "a line break (the token must be on a single line, with nothing else in the file)"
+		case r == 0:
+			what = "a NUL byte (is the file saved in an unusual encoding?)"
+		case r < 0x20 || r == 0x7f:
+			what = fmt.Sprintf("a control character (U+%04X)", r)
+		case r == ' ' || r == '\t':
+			what = "a space in the middle (only the token itself should be there)"
+		case r == utf8.RuneError || r > 0x7e:
+			what = fmt.Sprintf("a non-ASCII character (U+%04X)", r)
+		default:
+			continue
+		}
+		return "", fmt.Errorf("%s: the token contains %s at character %d of %d; Matrix access tokens are printable ASCII without spaces", source, what, utf8.RuneCountInString(s[:i])+1, utf8.RuneCountInString(s))
+	}
+	return s, nil
 }
