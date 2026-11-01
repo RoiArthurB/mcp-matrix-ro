@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 
 	"github.com/RoiArthurB/mcp-matrix-ro/internal/config"
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/fsutil"
 	"github.com/RoiArthurB/mcp-matrix-ro/internal/matrix"
 )
 
@@ -42,18 +43,11 @@ func load(path string) (*Saved, error) {
 }
 
 func save(path string, s *Saved) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
 	b, err := json.Marshal(s)
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsutil.WriteFileAtomic(path, b)
 }
 
 // Mode describes how cfg logs in, for logs and `check`.

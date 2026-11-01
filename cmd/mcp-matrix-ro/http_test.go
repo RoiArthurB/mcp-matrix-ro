@@ -3,8 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"strings"
 	"sync"
@@ -49,6 +52,39 @@ func TestHTTPToken(t *testing.T) {
 	}
 	if tok, err := httpToken(env(map[string]string{"MCP_MATRIX_RO_HTTP_TOKEN": " " + testHTTPToken + "\n"})); err != nil || tok != testHTTPToken {
 		t.Errorf("got %q, %v", tok, err)
+	}
+}
+
+func TestRequireBearer(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := requireBearer(testHTTPToken, log, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.ReadAll(r.Body); err != nil {
+			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+		}
+	}))
+	for auth, want := range map[string]int{
+		"Bearer " + testHTTPToken:     200,
+		"bearer " + testHTTPToken:     200,
+		"BEARER  " + testHTTPToken:    200,
+		"Bearer":                      401,
+		"Bearer " + testHTTPToken[1:]: 401,
+		"Basic " + testHTTPToken:      401,
+		testHTTPToken:                 401,
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/mcp", strings.NewReader("{}"))
+		req.Header.Set("Authorization", auth)
+		h.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("auth %q: status %d, want %d", auth, rec.Code, want)
+		}
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/mcp", strings.NewReader(strings.Repeat("x", maxRequestBody+1)))
+	req.Header.Set("Authorization", "Bearer "+testHTTPToken)
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("oversized body: status %d", rec.Code)
 	}
 }
 
@@ -157,6 +193,15 @@ func TestServeHTTPSmoke(t *testing.T) {
 			}
 			if text := res.Content[0].(*mcp.TextContent).Text; res.IsError || !strings.Contains(text, "Mẹ (WhatsApp DM)") {
 				t.Errorf("bad recent result: %s", text)
+			}
+			// chats goes through the shared room index.
+			res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "chats", Arguments: map[string]any{}})
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if text := res.Content[0].(*mcp.TextContent).Text; res.IsError || !strings.Contains(text, "Mẹ") {
+				t.Errorf("bad chats result: %s", text)
 			}
 		}()
 	}

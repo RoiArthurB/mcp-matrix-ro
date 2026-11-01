@@ -5,6 +5,7 @@ package resolve
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -34,6 +35,10 @@ type Resolver struct {
 	mu     sync.Mutex
 	whoami string
 	me     map[string]bool
+
+	// indexMu lets one caller rebuild a stale index while concurrent
+	// callers (HTTP mode) wait for it instead of syncing too.
+	indexMu sync.Mutex
 }
 
 // New builds a Resolver.
@@ -69,6 +74,13 @@ func (r *Resolver) WhoAmI(ctx context.Context) (string, error) {
 	r.me[w] = true
 	r.mu.Unlock()
 	return w, nil
+}
+
+// whoamiID returns the account's user ID if already known, without I/O.
+func (r *Resolver) whoamiID() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.whoami
 }
 
 // IsMe reports whether id is one of the owner's IDs.
@@ -179,7 +191,13 @@ func (r *Resolver) FetchNames(ctx context.Context, pairs [][2]string) {
 			p, err := r.mc.Profile(ctx, u)
 			if err != nil {
 				r.log.Debug("profile lookup failed", "user", u, "err", err)
-				r.cache.setProfile(u, "") // remember the miss for profileTTL
+				var me *matrix.Error
+				if errors.As(err, &me) && !matrix.IsAuth(err) {
+					// The server answered (no profile, forbidden...):
+					// remember the miss for profileTTL. Network errors
+					// and timeouts are retried on the next call.
+					r.cache.setProfile(u, "")
+				}
 				return
 			}
 			r.cache.setProfile(u, p.DisplayName)
@@ -386,8 +404,8 @@ func (r *Resolver) classify(id string, jr matrix.JoinedRoom, prev *RoomEntry) *R
 	} else if prev != nil {
 		joined = prev.Joined
 	}
-	if r.whoami != "" {
-		members[r.whoami] = true // the syncing account is always joined
+	if w := r.whoamiID(); w != "" {
+		members[w] = true // the syncing account is always joined
 	}
 	if joined == 0 {
 		joined = len(members)
@@ -518,8 +536,12 @@ func (r *Resolver) Index(ctx context.Context) ([]*RoomEntry, error) {
 	if _, err := r.WhoAmI(ctx); err != nil {
 		return nil, err
 	}
-	if rooms, ok := r.cache.index(); ok {
-		sort.Slice(rooms, func(i, j int) bool { return rooms[i].LastTS > rooms[j].LastTS })
+	if rooms, ok := r.freshIndex(); ok {
+		return rooms, nil
+	}
+	r.indexMu.Lock()
+	defer r.indexMu.Unlock()
+	if rooms, ok := r.freshIndex(); ok { // rebuilt while we waited
 		return rooms, nil
 	}
 	data, err := r.Sync(ctx, 1)
@@ -533,12 +555,12 @@ func (r *Resolver) Index(ctx context.Context) ([]*RoomEntry, error) {
 	return out, nil
 }
 
-// Room returns the index entry for a room ID, if known.
-func (r *Resolver) Room(ctx context.Context, id string) (*RoomEntry, bool) {
-	if _, err := r.Index(ctx); err != nil {
-		return nil, false
+func (r *Resolver) freshIndex() ([]*RoomEntry, bool) {
+	rooms, ok := r.cache.index()
+	if ok {
+		sort.Slice(rooms, func(i, j int) bool { return rooms[i].LastTS > rooms[j].LastTS })
 	}
-	return r.cache.room(id)
+	return rooms, ok
 }
 
 // AmbiguousError lists the chats a name matched.

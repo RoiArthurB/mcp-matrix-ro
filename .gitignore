@@ -3,3 +3,6 @@
 .env
 matrix_token.txt
 docker-compose.yml
+matrix_password.txt
+mcp_http_token.txt
+/state/

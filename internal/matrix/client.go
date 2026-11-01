@@ -31,8 +31,9 @@ type Client struct {
 	log    *slog.Logger
 	reauth func(ctx context.Context, failed string) (string, error)
 
-	mu    sync.Mutex
-	token string
+	refreshMu sync.Mutex // serialises Reauth calls
+	mu        sync.Mutex // guards token
+	token     string
 }
 
 // Options configures a Client.
@@ -162,18 +163,21 @@ func (c *Client) currentToken() string {
 }
 
 // refresh replaces the token via Reauth, unless another goroutine already
-// replaced the token that failed.
+// replaced the token that failed. Only one Reauth runs at a time; requests
+// that do not need a new token are not blocked while it runs.
 func (c *Client) refresh(ctx context.Context, failed string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.token != failed {
+	c.refreshMu.Lock()
+	defer c.refreshMu.Unlock()
+	if c.currentToken() != failed {
 		return nil
 	}
 	tok, err := c.reauth(ctx, failed)
 	if err != nil {
 		return err
 	}
+	c.mu.Lock()
 	c.token = tok
+	c.mu.Unlock()
 	return nil
 }
 
@@ -185,7 +189,7 @@ const maxRefresh = 2
 // already escaped.
 func (c *Client) do(ctx context.Context, method, rawPath string, q url.Values, body any, out any) error {
 	if rawPath == loginPath {
-		// No token, and no lock: Login may run inside refresh via Reauth.
+		// No token, and no refresh: Login runs inside refresh via Reauth.
 		return c.doOnce(ctx, method, rawPath, q, body, out, "")
 	}
 	if c.reauth == nil {

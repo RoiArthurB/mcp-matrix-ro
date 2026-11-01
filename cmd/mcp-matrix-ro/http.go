@@ -20,6 +20,9 @@ import (
 // minHTTPTokenLen is the shortest bearer token accepted for the HTTP transport.
 const minHTTPTokenLen = 16
 
+// maxRequestBody caps an MCP request body; tool calls are a few hundred bytes.
+const maxRequestBody = 1 << 20
+
 // mcpPath is where the Streamable HTTP endpoint is served.
 const mcpPath = "/mcp"
 
@@ -94,10 +97,8 @@ func httpToken(getenv func(string) string) (string, error) {
 func requireBearer(token string, log *slog.Logger, next http.Handler) http.Handler {
 	want := sha256.Sum256([]byte(token))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok {
-			got, ok = strings.CutPrefix(r.Header.Get("Authorization"), "bearer ")
-		}
+		scheme, got, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+		ok = ok && strings.EqualFold(scheme, "Bearer")
 		h := sha256.Sum256([]byte(strings.TrimSpace(got)))
 		if !ok || subtle.ConstantTimeCompare(h[:], want[:]) != 1 {
 			log.Warn("rejected unauthenticated HTTP request", "remote", r.RemoteAddr, "path", r.URL.Path)
@@ -105,6 +106,7 @@ func requireBearer(token string, log *slog.Logger, next http.Handler) http.Handl
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 		next.ServeHTTP(w, r)
 	})
 }

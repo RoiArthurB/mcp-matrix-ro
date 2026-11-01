@@ -31,7 +31,33 @@ type App struct {
 	Log  *slog.Logger
 	Now  func() time.Time
 
-	parents sync.Map // event ID -> model.Message (reply parents)
+	parents parentCache
+}
+
+// maxParents bounds the reply-parent cache of a long-running server.
+const maxParents = 2000
+
+// parentCache remembers rendered reply parents by event ID (events never
+// change, edits aside). It is cleared when full rather than growing forever.
+type parentCache struct {
+	mu sync.Mutex
+	m  map[string]model.Message
+}
+
+func (c *parentCache) get(id string) (model.Message, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	m, ok := c.m[id]
+	return m, ok
+}
+
+func (c *parentCache) put(id string, m model.Message) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m == nil || len(c.m) >= maxParents {
+		c.m = make(map[string]model.Message)
+	}
+	c.m[id] = m
 }
 
 // New builds an App. now may be nil (time.Now).
@@ -111,8 +137,8 @@ func (a *App) resolveReplies(ctx context.Context, roomID string, msgs []model.Me
 		if r == nil {
 			continue
 		}
-		if p, ok := a.parents.Load(r.EventID); ok {
-			a.Conv.SetParent(roomID, &msgs[i], p.(model.Message))
+		if p, ok := a.parents.get(r.EventID); ok {
+			a.Conv.SetParent(roomID, &msgs[i], p)
 			continue
 		}
 		if r.SenderID != "" {
@@ -160,12 +186,12 @@ func (a *App) resolveReplies(ctx context.Context, roomID string, msgs []model.Me
 		if e == nil {
 			continue
 		}
-		a.parents.Store(e.EventID, a.Conv.ConvertOne(roomID, *e))
+		a.parents.put(e.EventID, a.Conv.ConvertOne(roomID, *e))
 	}
 	for i := range msgs {
 		if r := msgs[i].Reply; r != nil && r.Sender == "" {
-			if p, ok := a.parents.Load(r.EventID); ok {
-				a.Conv.SetParent(roomID, &msgs[i], p.(model.Message))
+			if p, ok := a.parents.get(r.EventID); ok {
+				a.Conv.SetParent(roomID, &msgs[i], p)
 			}
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/RoiArthurB/mcp-matrix-ro/internal/fsutil"
 	"github.com/RoiArthurB/mcp-matrix-ro/internal/model"
 )
 
@@ -48,11 +49,12 @@ type cacheData struct {
 // Cache is an in-memory cache mirrored to a JSON file in the state dir.
 // It holds names and room metadata only, never message bodies.
 type Cache struct {
-	mu    sync.Mutex
-	path  string
-	now   func() time.Time
-	d     cacheData
-	dirty bool
+	saveMu sync.Mutex
+	mu     sync.Mutex
+	path   string
+	now    func() time.Time
+	d      cacheData
+	dirty  bool
 }
 
 // OpenCache loads dir/cache.json if present. dir may be empty (memory only).
@@ -80,28 +82,31 @@ func OpenCache(dir string, now func() time.Time) *Cache {
 }
 
 // Save writes the cache atomically if it changed. Errors are non-fatal.
+// The snapshot is taken under the lock but written outside it, so readers
+// are not held up by disk I/O; saveMu keeps concurrent saves in order.
 func (c *Cache) Save() error {
+	if c.path == "" {
+		return nil
+	}
+	c.saveMu.Lock()
+	defer c.saveMu.Unlock()
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !c.dirty || c.path == "" {
+	if !c.dirty {
+		c.mu.Unlock()
 		return nil
 	}
 	b, err := json.Marshal(c.d)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(c.path), 0o700); err != nil {
-		return err
-	}
-	tmp := c.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, c.path); err != nil {
-		return err
-	}
 	c.dirty = false
-	return nil
+	c.mu.Unlock()
+	if err == nil {
+		err = fsutil.WriteFileAtomic(c.path, b)
+	}
+	if err != nil {
+		c.mu.Lock()
+		c.dirty = true // try again next time
+		c.mu.Unlock()
+	}
+	return err
 }
 
 func (c *Cache) whoami() string {
