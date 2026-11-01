@@ -275,7 +275,7 @@ func TestReauthOnRejectedToken(t *testing.T) {
 		_, _ = w.Write([]byte(`{"user_id":"@u:x"}`))
 	}))
 	defer srv.Close()
-	c, _ := New(Options{Homeserver: srv.URL, Token: "stale", Reauth: func(context.Context) (string, error) {
+	c, _ := New(Options{Homeserver: srv.URL, Token: "stale", Reauth: func(context.Context, string) (string, error) {
 		logins++
 		return "fresh", nil
 	}})
@@ -288,8 +288,68 @@ func TestReauthOnRejectedToken(t *testing.T) {
 		t.Fatalf("want exactly 1 re-login, got %d", logins)
 	}
 	// A failing re-login surfaces as an error, without looping.
-	c2, _ := New(Options{Homeserver: srv.URL, Reauth: func(context.Context) (string, error) { return "still-bad", nil }})
-	if _, err := c2.WhoAmI(context.Background()); !IsAuth(err) {
-		t.Fatalf("want auth error, got %v", err)
+	c2, _ := New(Options{Homeserver: srv.URL, Reauth: func(context.Context, string) (string, error) { return "still-bad", nil }})
+	_, err := c2.WhoAmI(context.Background())
+	var ae *AuthError
+	if !IsAuth(err) || !errors.As(err, &ae) || !ae.Password || ae.LoginFailed {
+		t.Fatalf("want auth error after a password login, got %v", err)
+	}
+}
+
+func TestTokenOnlyAuthErrorExplainsFix(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		_, _ = w.Write([]byte(`{"errcode":"M_UNKNOWN_TOKEN","error":"Invalid token"}`))
+	}))
+	defer srv.Close()
+	c, _ := New(Options{Homeserver: srv.URL, Token: "dead"})
+	_, err := c.WhoAmI(context.Background())
+	var ae *AuthError
+	if !errors.As(err, &ae) || ae.Password || !strings.Contains(ae.Hint(), "MATRIX_PASSWORD") {
+		t.Fatalf("want a token-only auth error suggesting password login, got %v", err)
+	}
+}
+
+// The first Reauth call may hand back a token saved by another process; only
+// if that one is rejected too is a second call (the real login) made.
+func TestReauthTriesSavedTokenThenLogsIn(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer fresh" {
+			w.WriteHeader(401)
+			_, _ = w.Write([]byte(`{"errcode":"M_UNKNOWN_TOKEN","error":"Invalid token"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"user_id":"@u:x"}`))
+	}))
+	defer srv.Close()
+	var calls []string
+	c, _ := New(Options{Homeserver: srv.URL, Token: "dead", Reauth: func(_ context.Context, failed string) (string, error) {
+		calls = append(calls, failed)
+		if failed == "dead" {
+			return "saved-but-stale", nil
+		}
+		return "fresh", nil
+	}})
+	if _, err := c.WhoAmI(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(calls, ",") != "dead,saved-but-stale" {
+		t.Fatalf("reauth calls: %v", calls)
+	}
+}
+
+func TestFailedPasswordLoginIsReported(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		_, _ = w.Write([]byte(`{"errcode":"M_UNKNOWN_TOKEN","error":"Invalid token"}`))
+	}))
+	defer srv.Close()
+	c, _ := New(Options{Homeserver: srv.URL, Token: "dead", Reauth: func(context.Context, string) (string, error) {
+		return "", &Error{Status: 401, ErrCode: "M_FORBIDDEN", Message: "login failed: Invalid password"}
+	}})
+	_, err := c.WhoAmI(context.Background())
+	var ae *AuthError
+	if !errors.As(err, &ae) || !ae.LoginFailed || !strings.Contains(err.Error(), "Invalid password") {
+		t.Fatalf("want a failed-login error, got %v", err)
 	}
 }

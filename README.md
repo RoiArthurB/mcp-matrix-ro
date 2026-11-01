@@ -37,7 +37,11 @@ The binaries are about 7 to 8 MB (`CGO_ENABLED=0`, `-trimpath`, `-s -w`).
 
 Configuration comes from environment variables. Flags with the same name override them (run `mcp-matrix-ro <cmd> -h`). The token and password are never flags, so they can't leak via `ps`.
 
-**Login:** use either an access token or a username and password. If both are set, the token wins and the password settings are ignored (a missing password file is not an error). With a password, the first start logs in once and caches the token and device in `$MCP_MATRIX_RO_STATE_DIR/session.json` (mode 0600). Later starts reuse it, so ZeroClaw restarts don't create a new device each time. If the server rejects the cached token, it logs in again once on the same device.
+**Login:** use an access token, a username and password, or both. With a password, the first start logs in once and caches the token and device in `$MCP_MATRIX_RO_STATE_DIR/session.json` (mode 0600). Later starts reuse it, so ZeroClaw restarts don't create a new device each time. If the homeserver rejects the token, the server logs in again by itself on the same device and retries the request.
+
+If both a token and a password are set, the token is used first and the password is only a fallback for when the token is rejected (an unreadable password file just disables the fallback, with a warning). With a token alone, a rejected token can't be recovered: get a fresh one, or add the password.
+
+`serve`, `check` and `digest` share `session.json` when they use the same state dir. Logging in on an existing device replaces that device's token, so before logging in again each process first tries the token another one saved. A `check` or `digest` run therefore never leaves a running `serve` with a dead token. Don't reuse the server's device ID for manual logins (for example `curl /login` with `"device_id"`): that silently invalidates a configured access token. `check` prints which login mode is in use.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -145,7 +149,7 @@ docker compose up -d mcp-matrix-ro-http   # background server on http://127.0.0.
 
 The HTTP service listens on `0.0.0.0:8080` inside the container (Docker's port forwarding needs that) and publishes the port on the host's `127.0.0.1` only. Point the client at `http://127.0.0.1:8080/mcp` with the token from `mcp_http_token.txt` (see [HTTP mode](#http-mode-background-server)). If the client runs in another container, put both on the same Docker network and use `http://mcp-matrix-ro-http:8080/mcp` instead of publishing the port.
 
-To use a password instead, remove the `matrix_token` secret and `MATRIX_ACCESS_TOKEN_FILE`, and set `MATRIX_USER` and `MATRIX_PASSWORD_FILE` (or `MATRIX_PASSWORD`) in `.env`. With password login, keep `/state` persistent (named volume, or a `./state` bind mount owned by uid 65532) so the session is reused across restarts.
+To use a password instead, remove the `matrix_token` secret and `MATRIX_ACCESS_TOKEN_FILE` (otherwise the token is tried first and the password is only a fallback), and set `MATRIX_USER` and `MATRIX_PASSWORD_FILE` (or `MATRIX_PASSWORD`) in `.env`. With password login, keep `/state` persistent (named volume, or a `./state` bind mount owned by uid 65532) so the session is reused across restarts.
 
 ZeroClaw with Docker over stdio:
 

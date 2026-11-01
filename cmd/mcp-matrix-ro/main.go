@@ -158,7 +158,12 @@ func failure(stderr io.Writer, what string, err error) int {
 	var uerr *app.UserError
 	switch {
 	case matrix.IsAuth(err):
-		fmt.Fprintf(stderr, "mcp-matrix-ro: %s: authentication failed: the access token or password was rejected (%v)\n", what, err)
+		var ae *matrix.AuthError
+		if errors.As(err, &ae) {
+			fmt.Fprintf(stderr, "mcp-matrix-ro: %s: authentication failed: %v\n", what, err)
+		} else {
+			fmt.Fprintf(stderr, "mcp-matrix-ro: %s: authentication failed: the access token or password was rejected (%v)\n", what, err)
+		}
 		return exitAuth
 	case errors.As(err, &uerr):
 		fmt.Fprintf(stderr, "mcp-matrix-ro: %s: %v\n", what, err)
@@ -277,6 +282,7 @@ func check(ctx context.Context, a *app.App, cfg *config.Config, stdout, stderr i
 	}
 	fmt.Fprintf(stdout, "Homeserver:   %s\n", cfg.Homeserver)
 	fmt.Fprintf(stdout, "Logged in as: %s (device %s)\n", r.UserID, r.DeviceID)
+	fmt.Fprintf(stdout, "Login:        %s\n", session.Mode(cfg))
 	me := cfg.Me
 	if len(me) == 0 {
 		me = []string{r.UserID}

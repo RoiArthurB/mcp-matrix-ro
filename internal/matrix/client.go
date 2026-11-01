@@ -29,7 +29,7 @@ type Client struct {
 	http   *http.Client
 	sem    chan struct{}
 	log    *slog.Logger
-	reauth func(ctx context.Context) (string, error)
+	reauth func(ctx context.Context, failed string) (string, error)
 
 	mu    sync.Mutex
 	token string
@@ -40,8 +40,10 @@ type Options struct {
 	Homeserver string
 	Token      string
 	// Reauth, if set, obtains a new access token (password login). It is
-	// called when Token is empty and once after an authentication failure.
-	Reauth  func(ctx context.Context) (string, error)
+	// called when Token is empty (failed == "") and after the homeserver
+	// rejects the token failed, at most twice per request: the first call
+	// may return a token another process saved, the second must log in.
+	Reauth  func(ctx context.Context, failed string) (string, error)
 	Timeout time.Duration
 	Logger  *slog.Logger
 	// Transport is the underlying transport (tests); defaults to http.DefaultTransport.
@@ -111,6 +113,34 @@ func IsAuth(err error) bool {
 	return false
 }
 
+// AuthError is an authentication failure that the client could not recover
+// from, explained in terms of the configuration. IsAuth is true for it.
+type AuthError struct {
+	// Password is true when a password login is configured (alone or as a
+	// fallback for a token).
+	Password bool
+	// LoginFailed is true when the password login itself failed.
+	LoginFailed bool
+	Err         error
+}
+
+func (e *AuthError) Error() string { return e.Hint() + " (" + e.Err.Error() + ")" }
+
+func (e *AuthError) Unwrap() error { return e.Err }
+
+// Hint tells the user what to fix, without the underlying error.
+func (e *AuthError) Hint() string {
+	switch {
+	case e.LoginFailed:
+		return "the homeserver refused the password login: check MATRIX_USER and MATRIX_PASSWORD / MATRIX_PASSWORD_FILE"
+	case e.Password:
+		return "the homeserver rejected the access token even right after a password login"
+	default:
+		return "the homeserver rejected the access token (expired, logged out, or replaced by a newer login on the same device): " +
+			"set a fresh MATRIX_ACCESS_TOKEN, or set MATRIX_USER + MATRIX_PASSWORD so the server can log in again by itself"
+	}
+}
+
 func path(segs ...string) string {
 	var b strings.Builder
 	for i, s := range segs {
@@ -139,7 +169,7 @@ func (c *Client) refresh(ctx context.Context, failed string) error {
 	if c.token != failed {
 		return nil
 	}
-	tok, err := c.reauth(ctx)
+	tok, err := c.reauth(ctx, failed)
 	if err != nil {
 		return err
 	}
@@ -147,32 +177,58 @@ func (c *Client) refresh(ctx context.Context, failed string) error {
 	return nil
 }
 
-// do performs one request, logging in again once if the token is missing or
-// rejected and a Reauth function is configured. rawPath is already escaped.
+// maxRefresh bounds the token replacements per request.
+const maxRefresh = 2
+
+// do performs one request, replacing the token (at most maxRefresh times) if
+// it is missing or rejected and a Reauth function is configured. rawPath is
+// already escaped.
 func (c *Client) do(ctx context.Context, method, rawPath string, q url.Values, body any, out any) error {
 	if rawPath == loginPath {
 		// No token, and no lock: Login may run inside refresh via Reauth.
 		return c.doOnce(ctx, method, rawPath, q, body, out, "")
 	}
 	if c.reauth == nil {
-		return c.doOnce(ctx, method, rawPath, q, body, out, c.currentToken())
+		err := c.doOnce(ctx, method, rawPath, q, body, out, c.currentToken())
+		if IsAuth(err) {
+			return &AuthError{Err: err}
+		}
+		return err
 	}
 	tok := c.currentToken()
 	if tok == "" {
-		if err := c.refresh(ctx, ""); err != nil {
+		if err := c.relogin(ctx, ""); err != nil {
 			return err
 		}
 		tok = c.currentToken()
 	}
 	err := c.doOnce(ctx, method, rawPath, q, body, out, tok)
-	if !IsAuth(err) {
-		return err
+	for i := 0; i < maxRefresh && IsAuth(err); i++ {
+		c.log.Warn("access token rejected by the homeserver; getting a new one", "path", strings.SplitN(rawPath, "?", 2)[0])
+		if rerr := c.relogin(ctx, tok); rerr != nil {
+			return rerr
+		}
+		tok = c.currentToken()
+		err = c.doOnce(ctx, method, rawPath, q, body, out, tok)
 	}
-	c.log.Info("access token rejected; logging in again")
-	if rerr := c.refresh(ctx, tok); rerr != nil {
-		return rerr
+	if IsAuth(err) {
+		return &AuthError{Password: true, Err: err}
 	}
-	return c.doOnce(ctx, method, rawPath, q, body, out, c.currentToken())
+	return err
+}
+
+// relogin wraps refresh, marking authentication failures as a failed login.
+func (c *Client) relogin(ctx context.Context, failed string) error {
+	err := c.refresh(ctx, failed)
+	if err == nil {
+		return nil
+	}
+	if IsAuth(err) {
+		c.log.Error("password login failed", "err", err)
+		return &AuthError{Password: true, LoginFailed: true, Err: err}
+	}
+	c.log.Warn("could not log in again", "err", err)
+	return fmt.Errorf("logging in again: %w", err)
 }
 
 func (c *Client) doOnce(ctx context.Context, method, rawPath string, q url.Values, body any, out any, token string) error {

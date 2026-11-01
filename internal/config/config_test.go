@@ -72,10 +72,10 @@ func TestPasswordLogin(t *testing.T) {
 	if c.User != "archive" || c.Password != " p@ss word " || c.Token != "" {
 		t.Fatalf("got %+v", c)
 	}
-	// A token wins over credentials.
+	// A token is used first; the credentials are kept as a fallback.
 	c, _ = FromEnv(env(map[string]string{"MATRIX_HOMESERVER": "https://m", "MATRIX_ACCESS_TOKEN": "t", "MATRIX_USER": "a", "MATRIX_PASSWORD": "p"})).Resolve()
-	if c.Token != "t" || c.Password != "" {
-		t.Fatalf("token should win: %+v", c)
+	if c.Token != "t" || c.User != "a" || c.Password != "p" {
+		t.Fatalf("token first, password as fallback: %+v", c)
 	}
 	if _, err := FromEnv(env(map[string]string{"MATRIX_HOMESERVER": "https://m", "MATRIX_USER": "a"})).Resolve(); err == nil {
 		t.Fatal("want error for user without password")
@@ -160,7 +160,7 @@ func TestTokenIgnoresPasswordSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("missing password file must not matter with a token: %v", err)
 	}
-	if c.Token != "syt_abc" || c.User != "" || c.Password != "" {
+	if c.Token != "syt_abc" || c.User != "" || c.Password != "" || c.PasswordErr == nil {
 		t.Fatalf("got %+v", c)
 	}
 }
