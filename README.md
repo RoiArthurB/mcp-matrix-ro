@@ -2,7 +2,7 @@
 
 Read-only access to one Matrix account for AI agents. It is a single static Go binary with two faces:
 
-- `mcp-matrix-ro serve`: an MCP server over stdio with 5 small tools (`recent`, `chats`, `read`, `search`, `chat_info`).
+- `mcp-matrix-ro serve`: an MCP server over stdio (or Streamable HTTP with `--http`) with 5 small tools (`recent`, `chats`, `read`, `search`, `chat_info`).
 - `mcp-matrix-ro digest`: prints the same "recent messages" view as Markdown or JSON, for cron jobs such as a nightly brief.
 
 It is built for a dedicated archive account (`@archive:<domain>`) that is logged into mautrix bridges, running on a Raspberry Pi next to a small local model. Every bridged chat is a Matrix room. See [SPEC.md](SPEC.md) for the original design (written when the project was called mxread: its `MXREAD_*` variables are now `MCP_MATRIX_RO_*`).
@@ -54,6 +54,8 @@ Configuration comes from environment variables. Flags with the same name overrid
 | `MCP_MATRIX_RO_STATE_DIR` | `$XDG_STATE_HOME/mcp-matrix-ro` | Local cache (room names, member names, whoami) and, with password login, the session. It never stores message bodies. |
 | `MCP_MATRIX_RO_HTTP_TIMEOUT` | `20s` | Per request |
 | `MCP_MATRIX_RO_LOG` | `warn` | `debug`, `info`, `warn`, or `error`, to stderr only |
+| `MCP_MATRIX_RO_HTTP` | empty (stdio) | `serve` only: listen address for the Streamable HTTP transport, same as `--http`. A bare port or `:port` binds to `127.0.0.1`. |
+| `MCP_MATRIX_RO_HTTP_TOKEN` / `MCP_MATRIX_RO_HTTP_TOKEN_FILE` | required with `--http` | Bearer token clients must send (at least 16 characters, e.g. `openssl rand -hex 32`) |
 
 Check your setup first:
 
@@ -91,9 +93,44 @@ zeroclaw service restart   # MCP processes only pick up new env on restart
 
 `auto_approve`: `chat__recent`, `chat__chats`, `chat__read`, `chat__search`, `chat__chat_info`.
 
+## HTTP mode (background server)
+
+With stdio, the MCP client starts a new process for every session, which pays the startup and the first sync each time. `serve --http` instead runs one long-lived server that answers each MCP request directly, with its caches warm:
+
+```sh
+export MCP_MATRIX_RO_HTTP_TOKEN="$(openssl rand -hex 32)"
+mcp-matrix-ro serve --http 127.0.0.1:8080      # endpoint: http://127.0.0.1:8080/mcp
+```
+
+- It speaks MCP Streamable HTTP on `/mcp` (stateless, JSON responses), so a restart never invalidates a client session.
+- Every request must carry `Authorization: Bearer <token>`; the server refuses to start without a token. `GET /healthz` answers `ok` without auth and reveals nothing else.
+- It binds to `127.0.0.1` unless you name another host, and logs a warning when it is not on loopback. Matrix traffic still goes through the same allowlisted, read-only client.
+
+ZeroClaw:
+
+```toml
+[[mcp.servers]]
+name = "chat"
+transport = "http"
+url = "http://127.0.0.1:8080/mcp"
+```
+
+```sh
+zeroclaw config set mcp.servers.chat.headers.Authorization   # enter: Bearer <your token>
+```
+
+Quick check with curl:
+
+```sh
+curl -s http://127.0.0.1:8080/mcp \
+  -H "Authorization: Bearer $MCP_MATRIX_RO_HTTP_TOKEN" \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"chats","arguments":{}}}'
+```
+
 ## Docker
 
-The image is distroless, runs as non-root, and keeps its cache in the `/state` volume. Because MCP runs over stdio, the MCP client starts the container itself. Nothing listens on a port.
+The image is distroless, runs as non-root, and keeps its cache in the `/state` volume. It can run as a background HTTP server (`mcp-matrix-ro-http` service, recommended) or over stdio, where the MCP client starts a container for each session.
 
 [`docker-compose.example.yml`](docker-compose.example.yml) is a ready-to-use setup. It passes the token as a Docker secret, uses a read-only root filesystem, drops all capabilities, and includes a `digest` service for cron.
 
@@ -101,12 +138,16 @@ The image is distroless, runs as non-root, and keeps its cache in the `/state` v
 cp docker-compose.example.yml docker-compose.yml
 cp .env.example .env                       # set MATRIX_HOMESERVER and MCP_MATRIX_RO_ME
 printf '%s' 'syt_…' > matrix_token.txt && chmod 600 matrix_token.txt
+openssl rand -hex 32 | tr -d '\n' > mcp_http_token.txt && chmod 600 mcp_http_token.txt
 docker compose run --rm mcp-matrix-ro check
+docker compose up -d mcp-matrix-ro-http   # background server on http://127.0.0.1:8080/mcp
 ```
 
-To use a password instead, remove the secret and set `MATRIX_USER` and `MATRIX_PASSWORD_FILE` (or `MATRIX_PASSWORD`) in `.env`.
+The HTTP service listens on `0.0.0.0:8080` inside the container (Docker's port forwarding needs that) and publishes the port on the host's `127.0.0.1` only. Point the client at `http://127.0.0.1:8080/mcp` with the token from `mcp_http_token.txt` (see [HTTP mode](#http-mode-background-server)). If the client runs in another container, put both on the same Docker network and use `http://mcp-matrix-ro-http:8080/mcp` instead of publishing the port.
 
-ZeroClaw with Docker:
+To use a password instead, remove the `matrix_token` secret and `MATRIX_ACCESS_TOKEN_FILE`, and set `MATRIX_USER` and `MATRIX_PASSWORD_FILE` (or `MATRIX_PASSWORD`) in `.env`. With password login, keep `/state` persistent (named volume, or a `./state` bind mount owned by uid 65532) so the session is reused across restarts.
+
+ZeroClaw with Docker over stdio:
 
 ```toml
 [[mcp.servers]]
@@ -186,7 +227,7 @@ Example cron entry:
 ## Development
 
 ```
-cmd/mcp-matrix-ro/     subcommands: serve, digest, check, version (+ stdio smoke test)
+cmd/mcp-matrix-ro/     subcommands: serve (stdio or HTTP), digest, check, version (+ stdio and HTTP smoke tests)
 internal/matrix/       allowlisted client, endpoints, types, read-only tests
 internal/session/      token or password login, cached session
 internal/resolve/      room index, names, network tagging, DM detection, chat lookup, cache

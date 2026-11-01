@@ -24,8 +24,12 @@ jobs:
           install-go: false
       # Includes the read-only guarantee tests (internal/matrix) and the
       # fake-homeserver allowlist checks: any violation fails the build.
+      # MCP_MATRIX_RO_TEST_RACE also builds the subprocess under test with -race,
+      # so the concurrent HTTP smoke test checks the server itself.
       - name: Test
         run: go test -race -count=1 ./...
+        env:
+          MCP_MATRIX_RO_TEST_RACE: "1"
       - name: Cross-build all platforms and check size budget
         run: make dist size
 

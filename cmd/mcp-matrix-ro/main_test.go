@@ -24,7 +24,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	binary = filepath.Join(dir, "mcp-matrix-ro")
-	out, err := exec.Command("go", "build", "-o", binary, ".").CombinedOutput()
+	out, err := exec.Command("go", append([]string{"build", "-o", binary}, append(raceFlag(), ".")...)...).CombinedOutput()
 	if err != nil {
 		panic(string(out))
 	}
@@ -213,4 +213,12 @@ func TestPasswordLoginCLI(t *testing.T) {
 		t.Fatalf("wrong password: exit %d, stderr %q", code, errOut)
 	}
 	noViolations(t, hs)
+}
+
+// raceFlag builds the binary under test with -race when MCP_MATRIX_RO_TEST_RACE=1.
+func raceFlag() []string {
+	if os.Getenv("MCP_MATRIX_RO_TEST_RACE") == "1" {
+		return []string{"-race"}
+	}
+	return nil
 }
