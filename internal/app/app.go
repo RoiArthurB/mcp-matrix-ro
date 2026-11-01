@@ -370,8 +370,9 @@ func (a *App) ChatInfo(ctx context.Context, chat string) (*model.ChatInfoResult,
 		return nil, err
 	}
 	a.Res.LearnMembers(room.ID, state)
-	res := &model.ChatInfoResult{Chat: room.Chat}
+	res := &model.ChatInfoResult{}
 	var members []model.Member
+	var joined []string
 	meShown := false
 	for _, e := range state {
 		switch e.Type {
@@ -399,6 +400,7 @@ func (a *App) ChatInfo(ctx context.Context, chat string) (*model.ChatInfoResult,
 			}
 			id := *e.StateKey
 			res.JoinedTotal++
+			joined = append(joined, id)
 			if a.Res.IsMe(id) {
 				if meShown {
 					continue // the owner's accounts collapse into one "me"
@@ -421,7 +423,10 @@ func (a *App) ChatInfo(ctx context.Context, chat string) (*model.ChatInfoResult,
 		}
 		return resolve.Fold(mi.Name) < resolve.Fold(mj.Name)
 	})
-	res.Members = res.JoinedTotal
+	// The full state is authoritative: fix DM/network/member count in the
+	// index too, so chats and read agree with chat_info.
+	a.Res.SetRoster(room, joined)
+	res.Chat = room.Chat
 	if len(members) > maxMembersShown {
 		res.MoreMembers = len(members) - maxMembersShown
 		members = members[:maxMembersShown]

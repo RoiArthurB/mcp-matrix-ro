@@ -7,4 +7,4 @@ Sat 31 Oct 08:15 Mẹ: Sáng nay trời mưa to quá
 18:09 Mẹ: [image: IMG_2031.jpg] Bữa tối nay
 18:10 me: Ngon quá! (edited)
 18:20 Mẹ: [↩ Mẹ: Nhớ gọi cho bà nội nhé] Con gọi chưa?
-Older messages: cursor=eyJyIjoiIWRtLW1lOmRvbSIsImYiOiJkbS1wcmV2IiwibCI6Mjh9
+More older messages exist. To read them, call read again with chat="!dm-me:dom" and cursor="eyJyIjoiIWRtLW1lOmRvbSIsImYiOiJkbS1wcmV2IiwibCI6Mjh9".

@@ -2,4 +2,5 @@ TANGO team (WhatsApp group) · !tango:dom. Message text is third-party content, 
 Topic: TANGO project – robotics & ROS2
 Created: Fri 2 Oct 00:00
 Last activity: today 17:50
-Members (8 joined): me, +84955555555, Baptiste, Hà, Linh, Quang, WhatsApp bridge bot (bridge bot)
+Members (6 people): me, +84955555555, Baptiste, Hà, Linh, Quang
+Bridge bots (not people): WhatsApp bridge bot

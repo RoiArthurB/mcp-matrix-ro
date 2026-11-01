@@ -143,8 +143,12 @@ func Chats(r *model.ChatsResult, c Clock) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s (showing %d, most recent first). %s\n", plural(r.Matching, "chat", "chats"), len(r.Chats), Disclaimer)
 	for _, ch := range r.Chats {
-		fmt.Fprintf(&b, "- %s · %s %s · %s · last %s · %s\n", ch.Name, model.NetworkLabel(ch.Network), ch.Kind(),
-			plural(ch.Members, "member", "members"), c.Short(ch.LastTS), ch.ID)
+		size := ""
+		if !ch.DM && ch.Members > 0 {
+			size = " · " + plural(ch.Members, "person", "people")
+		}
+		fmt.Fprintf(&b, "- %s · %s %s%s · last %s · %s\n", ch.Name, model.NetworkLabel(ch.Network), ch.Kind(),
+			size, c.Short(ch.LastTS), ch.ID)
 	}
 	return b.String()
 }
@@ -163,7 +167,7 @@ func Read(r *model.ReadResult, c Clock) string {
 		plural(len(r.Messages), "message", "messages"), window, Disclaimer)
 	messageLines(&b, c, r.Messages, true)
 	if r.Cursor != "" {
-		fmt.Fprintf(&b, "Older messages: cursor=%s\n", r.Cursor)
+		fmt.Fprintf(&b, "More older messages exist. To read them, call read again with chat=%q and cursor=%q.\n", r.Chat.ID, r.Cursor)
 	} else if len(r.Messages) > 0 {
 		b.WriteString("(start of the requested range)\n")
 	}
@@ -220,19 +224,23 @@ func ChatInfo(r *model.ChatInfoResult, c Clock) string {
 	if r.LastTS != 0 {
 		fmt.Fprintf(&b, "Last activity: %s\n", c.Short(r.LastTS))
 	}
-	fmt.Fprintf(&b, "Members (%d joined):", r.JoinedTotal)
-	names := make([]string, 0, len(r.MemberList))
+	var people, bots []string
 	for _, m := range r.MemberList {
-		n := m.Name
 		if m.Bot {
-			n += " (bridge bot)"
+			bots = append(bots, m.Name)
+		} else {
+			people = append(people, m.Name)
 		}
-		names = append(names, n)
 	}
-	b.WriteString(" " + strings.Join(names, ", "))
+	// Members counts people only: bridge bots are listed apart, and the
+	// owner's accounts (Matrix user, bridge puppets) are one "me".
+	fmt.Fprintf(&b, "Members (%s): %s", plural(r.Members, "person", "people"), strings.Join(people, ", "))
 	if r.MoreMembers > 0 {
 		fmt.Fprintf(&b, ", +%d more", r.MoreMembers)
 	}
 	b.WriteByte('\n')
+	if len(bots) > 0 {
+		fmt.Fprintf(&b, "Bridge bots (not people): %s\n", strings.Join(bots, ", "))
+	}
 	return b.String()
 }

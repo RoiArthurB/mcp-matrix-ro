@@ -587,5 +587,52 @@
     }
    ]
   }
+ },
+ "!bap-wa:dom": {
+  "": {
+   "start": "w0",
+   "end": "bap-prev",
+   "chunk": [
+    {
+     "type": "m.room.message",
+     "sender": "@archive:dom",
+     "event_id": "$e074",
+     "origin_server_ts": 1793280780000,
+     "content": {
+      "msgtype": "m.text",
+      "body": "Oui, 10h au labo"
+     },
+     "unsigned": {}
+    },
+    {
+     "type": "m.room.message",
+     "sender": "@whatsapp_84988888888:dom",
+     "event_id": "$e073",
+     "origin_server_ts": 1793280600000,
+     "content": {
+      "msgtype": "m.text",
+      "body": "On se voit demain ?"
+     },
+     "unsigned": {}
+    }
+   ],
+   "state": [
+    {
+     "type": "m.room.member",
+     "state_key": "@whatsapp_84988888888:dom",
+     "sender": "@whatsapp_84988888888:dom",
+     "event_id": "$e083",
+     "origin_server_ts": 1790787600000,
+     "content": {
+      "membership": "join",
+      "displayname": "Baptiste (WA)"
+     }
+    }
+   ]
+  },
+  "bap-prev": {
+   "start": "bap-prev",
+   "chunk": []
+  }
  }
 }

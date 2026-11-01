@@ -186,6 +186,29 @@ func (s *Server) room(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		errJSON(w, 403, "M_FORBIDDEN")
+	case len(parts) == 2 && parts[1] == "joined_members":
+		b, ok := s.state[room]
+		if !ok {
+			errJSON(w, 403, "M_FORBIDDEN")
+			return
+		}
+		var evs []matrix.Event
+		_ = json.Unmarshal(b, &evs)
+		type member struct {
+			DisplayName string `json:"display_name,omitempty"`
+		}
+		joined := map[string]member{}
+		for _, e := range evs {
+			var c struct {
+				Membership  string `json:"membership"`
+				DisplayName string `json:"displayname"`
+			}
+			if e.Type != "m.room.member" || e.StateKey == nil || json.Unmarshal(e.Content, &c) != nil || c.Membership != "join" {
+				continue
+			}
+			joined[*e.StateKey] = member{c.DisplayName}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"joined": joined})
 	case len(parts) == 3 && parts[1] == "event":
 		id, _ := url.PathUnescape(parts[2])
 		if b, ok := s.events[id]; ok {
