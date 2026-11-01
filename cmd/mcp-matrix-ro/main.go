@@ -50,7 +50,7 @@ func main() {
 const usage = `mcp-matrix-ro — read-only Matrix access for AI agents
 
 Usage:
-  mcp-matrix-ro serve   [flags]   MCP server over stdio
+  mcp-matrix-ro serve   [flags]   MCP server over stdio (or Streamable HTTP with --http)
   mcp-matrix-ro digest  [flags]   print recent messages (Markdown or JSON)
   mcp-matrix-ro check   [flags]   verify login, server features and chat counts
   mcp-matrix-ro version
@@ -83,8 +83,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	raw.RegisterFlags(fs)
 	var d digestFlags
-	if cmd == "digest" {
+	var hf httpFlags
+	switch cmd {
+	case "digest":
 		d.register(fs)
+	case "serve":
+		hf.register(fs)
 	}
 	if err := fs.Parse(rest); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -98,6 +102,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	var httpAddr, httpTok string
+	if cmd == "serve" && strings.TrimSpace(hf.addr) != "" {
+		if httpAddr, err = listenAddr(hf.addr); err != nil {
+			fmt.Fprintln(stderr, "mcp-matrix-ro: config:", err)
+			return exitUsage
+		}
+		if httpTok, err = httpToken(os.Getenv); err != nil {
+			fmt.Fprintln(stderr, "mcp-matrix-ro: config:", err)
+			return exitUsage
+		}
+	}
 	mc, err := session.NewClient(cfg, log, nil)
 	if err != nil {
 		fmt.Fprintln(stderr, "mcp-matrix-ro: config:", err)
@@ -111,7 +126,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	switch cmd {
 	case "serve":
-		return serve(ctx, a, log, stderr)
+		return serve(ctx, a, log, stderr, httpAddr, httpTok)
 	case "digest":
 		return digest(ctx, a, d, stdout, stderr)
 	default:
@@ -119,9 +134,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-func serve(ctx context.Context, a *app.App, log *slog.Logger, stderr io.Writer) int {
+func serve(ctx context.Context, a *app.App, log *slog.Logger, stderr io.Writer, httpAddr, httpTok string) int {
 	s := mcp.NewServer(&mcp.Implementation{Name: "mcp-matrix-ro", Version: version}, nil)
 	tools.Register(s, a)
+	if httpAddr != "" {
+		if err := serveHTTP(ctx, s, httpAddr, httpTok, log); err != nil {
+			fmt.Fprintln(stderr, "mcp-matrix-ro: serve:", err)
+			return exitFail
+		}
+		return exitOK
+	}
 	log.Info("mcp-matrix-ro serving MCP on stdio")
 	if err := s.Run(ctx, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
 		fmt.Fprintln(stderr, "mcp-matrix-ro: serve:", err)

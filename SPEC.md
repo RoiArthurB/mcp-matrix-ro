@@ -200,7 +200,7 @@ zeroclaw service restart   # MCP processes only pick up new env on restart
 
 ## 12. Out of scope (v1)
 
-E2EE, sending anything, media download, server-side read markers, push/streaming, multi-account, HTTP transport (add later only with bearer auth + 127.0.0.1 bind).
+E2EE, sending anything, media download, server-side read markers, push/streaming, multi-account. (HTTP transport was added later as `serve --http`, with mandatory bearer auth and a 127.0.0.1 bind by default.)
 
 ---
 

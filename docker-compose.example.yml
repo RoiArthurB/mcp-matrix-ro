@@ -3,9 +3,15 @@
 # 1. cp docker-compose.example.yml docker-compose.yml
 #    cp .env.example .env            # then edit it
 #    printf '%s' 'syt_your_token' > matrix_token.txt && chmod 600 matrix_token.txt
+#    openssl rand -hex 32 | tr -d '\n' > mcp_http_token.txt && chmod 600 mcp_http_token.txt
 # 2. docker compose run --rm mcp-matrix-ro check
 #
-# MCP over stdio: the MCP client starts the server itself, e.g. in ZeroClaw:
+# Background HTTP server (recommended): one long-lived container, each MCP
+# request is answered directly with warm caches.
+#   docker compose up -d mcp-matrix-ro-http
+#   MCP endpoint: http://127.0.0.1:8080/mcp   (Authorization: Bearer <mcp_http_token.txt>)
+#
+# MCP over stdio instead: the MCP client starts a container for each session, e.g. in ZeroClaw:
 #   command = "docker"
 #   args = ["compose", "-f", "/opt/mcp-matrix-ro/docker-compose.yml", "run", "--rm", "-T", "mcp-matrix-ro", "serve"]
 #
@@ -22,15 +28,34 @@ x-common: &common
     - matrix_token
   volumes:
     - state:/state
+    # Or a bind mount owned by uid 65532: - ./state:/state
   read_only: true
   cap_drop: [ALL]
   security_opt:
     - no-new-privileges:true
-  # stdio server: no ports are published.
 
 services:
+  # Long-lived Streamable HTTP server.
+  mcp-matrix-ro-http:
+    <<: *common
+    restart: unless-stopped
+    environment:
+      MATRIX_ACCESS_TOKEN_FILE: /run/secrets/matrix_token
+      MCP_MATRIX_RO_STATE_DIR: /state
+      MCP_MATRIX_RO_HTTP_TOKEN_FILE: /run/secrets/mcp_http_token
+    secrets:
+      - matrix_token
+      - mcp_http_token
+    # 0.0.0.0 inside the container is required for Docker's port forwarding;
+    # the port is published on the host's loopback only.
+    command: ["serve", "--http", "0.0.0.0:8080"]
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  # stdio server, started on demand by the MCP client (no ports).
   mcp-matrix-ro:
     <<: *common
+    profiles: ["stdio"] # only runs when asked for: docker compose run mcp-matrix-ro
     stdin_open: true
     command: ["serve"]
 
@@ -42,6 +67,8 @@ services:
 secrets:
   matrix_token:
     file: ./matrix_token.txt
+  mcp_http_token:
+    file: ./mcp_http_token.txt
 
 volumes:
   state:
